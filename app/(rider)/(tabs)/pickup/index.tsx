@@ -1,15 +1,14 @@
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  Animated,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -20,62 +19,28 @@ type Pickup = {
   Address: string;
 };
 
-/* ---------- MOCK DATA ---------- */
-// const DATA: Pickup[] = [
-//   {
-//     id: "ORD123451",
-//     name: "Mrs. Sharma",
-//     address: "Green Valley Apts, MG Road, Bengaluru - 560001",
-//     status: "New",
-//   },
-//   {
-//     id: "ORD123452",
-//     name: "Mr. Verma",
-//     address: "Sunshine Towers, HSR Layout, Bengaluru - 560102",
-//     status: "Scheduled",
-//   },
-//   {
-//     id: "ORD123453",
-//     name: "Ms. Pooja",
-//     address: "Royal Residency, Koramangala, Bengaluru - 560034",
-//     status: "Scheduled",
-//   },
-//   {
-//     id: "ORD123454",
-//     name: "Mr. Khan",
-//     address: "Emerald Apartments, JP Nagar, Bengaluru - 560078",
-//     status: "Scheduled",
-//   },
-// ];
-
 const API_URL = "https://api.drydash.in/api/v1/rider";
 
 /* ================= SCREEN ================= */
 
 export default function Pickup() {
   const { user } = useAuth();
-
-  console.log("user:: in pikuos", user)
-
   const { theme } = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [pickups, setPickups] = useState<Pickup[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  /* page animation */
-  const pageOpacity = useRef(new Animated.Value(0)).current;
-  const pageTranslate = useRef(new Animated.Value(16)).current;
-
-  /* list animations */
-  const itemOpacity = useRef<Animated.Value[]>([]);
-  const itemTranslate = useRef<Animated.Value[]>([]);
-
+  /* ---------- FETCH PICKUPS ---------- */
   const getPickups = async () => {
-    setLoading(true)
+    if (!user?.email) return;
+
+    setLoading(true);
     try {
       const res = await fetch(
-        `${API_URL}/getriderpickups?email=${user?.email}`,
+        `${API_URL}/getriderpickups?email=${encodeURIComponent(
+          user.email
+        )}`,
         {
           method: "GET",
           headers: {
@@ -86,65 +51,26 @@ export default function Pickup() {
       );
 
       const data = await res.json();
-      setPickups(data.Pickups);
-      setLoading(false)
 
       if (!res.ok) {
-        throw new Error(data.message || "Failed to send OTP");
+        throw new Error(data.message || "Failed to fetch pickups");
       }
+
+      setPickups(Array.isArray(data.Pickups) ? data.Pickups : []);
     } catch (error) {
-      setLoading(false)
+      console.error("Pickup fetch error:", error);
+      setPickups([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
+  /* ---------- LOAD AFTER USER IS READY ---------- */
   useEffect(() => {
+    if (!user?.email) return;
     getPickups();
-  }, []);
-
-  // useEffect(() => {
-  //   setTimeout(() => {
-  //     setPickups(DATA);
-  //     setLoading(false);
-
-  //     Animated.parallel([
-  //       Animated.timing(pageOpacity, {
-  //         toValue: 1,
-  //         duration: 420,
-  //         easing: Easing.out(Easing.cubic),
-  //         useNativeDriver: true,
-  //       }),
-  //       Animated.timing(pageTranslate, {
-  //         toValue: 0,
-  //         duration: 520,
-  //         easing: Easing.out(Easing.cubic),
-  //         useNativeDriver: true,
-  //       }),
-  //     ]).start();
-
-  //     DATA.forEach((_, i) => {
-  //       itemOpacity.current[i] = new Animated.Value(0);
-  //       itemTranslate.current[i] = new Animated.Value(20);
-  //     });
-
-  //     Animated.stagger(
-  //       80,
-  //       DATA.map((_, i) =>
-  //         Animated.parallel([
-  //           Animated.timing(itemOpacity.current[i], {
-  //             toValue: 1,
-  //             duration: 360,
-  //             useNativeDriver: true,
-  //           }),
-  //           Animated.timing(itemTranslate.current[i], {
-  //             toValue: 0,
-  //             duration: 420,
-  //             useNativeDriver: true,
-  //           }),
-  //         ])
-  //       )
-  //     ).start();
-  //   }, 700);
-  // }, []);
+  }, [user?.email]);
 
   /* ---------- LOADING ---------- */
   if (loading) {
@@ -163,72 +89,69 @@ export default function Pickup() {
 
   /* ---------- UI ---------- */
   return (
-    <Animated.ScrollView
+    <ScrollView
       style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={{ paddingTop: 16, paddingBottom: 140 }}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          // onRefresh={onRefresh}
+          onRefresh={getPickups}
           tintColor={theme.primary}
         />
       }
       showsVerticalScrollIndicator={false}
     >
-      <Animated.View
-        style={{
-          opacity: pageOpacity,
-          transform: [{ translateY: pageTranslate }],
-        }}
-      >
-        <View style={styles.pageHeader}>
-          <Text style={[styles.pageTitle, { color: theme.text }]}>
-            Ready for Action
-          </Text>
-          <Text style={[styles.pageSub, { color: theme.subText }]}>
-            Your Pickup Queue
-          </Text>
-        </View>
+      <View style={styles.pageHeader}>
+        <Text style={[styles.pageTitle, { color: theme.text }]}>
+          Ready for Action
+        </Text>
+        <Text style={[styles.pageSub, { color: theme.subText }]}>
+          Your Pickup Queue
+        </Text>
+      </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Upcoming Pickups
-          </Text>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{pickups.length}</Text>
-          </View>
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          Upcoming Pickups
+        </Text>
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{pickups.length}</Text>
         </View>
-      </Animated.View>
+      </View>
 
-      {pickups.map((item, i) => (
-        <Animated.View
-          key={item._id}
-          style={{
-            opacity: itemOpacity.current[i],
-            transform: [{ translateY: itemTranslate.current[i] }],
-          }}
-        >
+      {pickups.map((item) => (
+        <View key={item._id}>
           <TouchableOpacity
             activeOpacity={0.9}
             style={[
               styles.card,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
-            onPress={() => router.push(`/(rider)/order/pickup/${item._id}`)}
+            onPress={() =>
+              router.push(`/(rider)/order/pickup/${item._id}`)
+            }
           >
             <View style={styles.iconWrap}>
-              <Ionicons name="location" size={20} color={theme.primary} />
+              <Ionicons
+                name="location"
+                size={20}
+                color={theme.primary}
+              />
             </View>
 
             <View style={styles.cardBody}>
-              <View style={styles.cardHeader}>
-                <Text style={[styles.orderId, { color: theme.text }]}>
-                  {('wzp-'+(item._id).slice(item._id.length - 5)).toUpperCase()}
-                </Text>
-              </View>
+              <Text
+                style={[styles.orderId, { color: theme.text }]}
+              >
+                {item._id
+                  ? `WZP-${item._id.slice(-5)}`.toUpperCase()
+                  : "WZP-----"}
+              </Text>
 
-              <Text style={[styles.name, { color: theme.text }]}>
-                {item.Name}
+              <Text
+                style={[styles.name, { color: theme.text }]}
+              >
+                {item.Name || "Customer"}
               </Text>
 
               <View style={styles.addressRow}>
@@ -238,33 +161,33 @@ export default function Pickup() {
                   color={theme.subText}
                 />
                 <Text
-                  style={[styles.address, { color: theme.subText }]}
+                  style={[
+                    styles.address,
+                    { color: theme.subText },
+                  ]}
                   numberOfLines={2}
                 >
-                  {item.Address}
+                  {item.Address || "Address not available"}
                 </Text>
               </View>
             </View>
-   <View
+
+            <View
               style={[
                 styles.actionBtn,
-                {
-                  backgroundColor:
-                    1
-                      ? theme.primary
-                      : theme.border,
-                },
+                { backgroundColor: theme.primary },
               ]}
             >
               <Ionicons
                 name="chevron-forward"
                 size={18}
-                color={1 ? "#000" : theme.subText}
+                color="#000"
               />
-            </View>          </TouchableOpacity>
-        </Animated.View>
+            </View>
+          </TouchableOpacity>
+        </View>
       ))}
-    </Animated.ScrollView>
+    </ScrollView>
   );
 }
 
@@ -330,18 +253,7 @@ const styles = StyleSheet.create({
   },
 
   cardBody: { flex: 1 },
-  cardHeader: { flexDirection: "row", gap: 8, marginBottom: 4 },
-  orderId: { fontWeight: "800", fontSize: 14 },
-
-  newBadge: {
-    backgroundColor: "#DCFCE7",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  newText: { color: "#16A34A", fontSize: 11, fontWeight: "800" },
-  scheduledText: { fontSize: 11, color: "#64748B", fontWeight: "700" },
-
+  orderId: { fontWeight: "800", fontSize: 14, marginBottom: 4 },
   name: { fontSize: 14, fontWeight: "700", marginBottom: 6 },
 
   addressRow: { flexDirection: "row", gap: 6 },
