@@ -2,6 +2,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import { Appearance, ColorSchemeName } from "react-native";
@@ -15,7 +16,9 @@ interface ThemeContextProps {
   toggleTheme: () => void;
 }
 
-const ThemeContext = createContext<ThemeContextProps | undefined>(undefined);
+const ThemeContext = createContext<ThemeContextProps | undefined>(
+  undefined
+);
 
 export const ThemeProvider = ({
   children,
@@ -26,8 +29,16 @@ export const ThemeProvider = ({
     Appearance.getColorScheme()
   );
 
-  const isDark = scheme !== "light";
-  const theme = isDark ? DarkTheme : LightTheme;
+  // 🔒 MEMOIZE derived values
+  const isDark = useMemo(
+    () => scheme !== "light",
+    [scheme]
+  );
+
+  const theme = useMemo(
+    () => (isDark ? DarkTheme : LightTheme),
+    [isDark]
+  );
 
   useEffect(() => {
     const subscription = Appearance.addChangeListener(
@@ -43,8 +54,18 @@ export const ThemeProvider = ({
     setScheme((prev) => (prev === "light" ? "dark" : "light"));
   };
 
+  // 🔥 MOST IMPORTANT FIX
+  const value = useMemo(
+    () => ({
+      theme,
+      isDark,
+      toggleTheme,
+    }),
+    [theme, isDark]
+  );
+
   return (
-    <ThemeContext.Provider value={{ theme, isDark, toggleTheme }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );

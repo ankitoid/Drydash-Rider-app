@@ -1,6 +1,9 @@
+import { useAuth } from "@/context/useAuth";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   StyleSheet,
   Text,
@@ -9,9 +12,14 @@ import {
   View,
 } from "react-native";
 
+const API_URL = "http://localhost:5001/api/v1/auth";
+
 export default function RiderOTP() {
   const { phone } = useLocalSearchParams<{ phone?: string }>();
+  const { login } = useAuth();
+
   const [otp, setOtp] = useState("");
+  const [loading, setLoading] = useState(false); 
 
   // animations
   const translateY = useRef(new Animated.Value(30)).current;
@@ -32,6 +40,53 @@ export default function RiderOTP() {
     ]).start();
   }, []);
 
+  const handleVerifyOtp = async () => {
+    if (!otp || otp.length !== 6) {
+      Alert.alert("Invalid OTP", "Enter a valid 6 digit OTP");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${API_URL}/verifyOtp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+        body: JSON.stringify({
+          phoneNumber: phone,
+          otp,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "OTP verification failed");
+      }
+
+      await login(
+        {
+          id: data.data.user._id,
+          name: data.data.user.name,
+          email: data.data.user.email,
+          phone: data.data.user.phone,
+          role: data.data.user.role,
+          plant: data.data.user.plant,
+        },
+        data.tokens.accessToken
+      );
+
+      router.replace("/(rider)/(tabs)/dashboard");
+    } catch (error: any) {
+      Alert.alert("Error", error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <Animated.View
@@ -44,10 +99,7 @@ export default function RiderOTP() {
         <Text style={styles.heading}>Verify OTP</Text>
 
         <Text style={styles.subText}>
-          OTP sent to{" "}
-          <Text style={styles.phone}>
-            +91 {phone || "XXXXXXXXXX"}
-          </Text>
+          OTP sent to <Text style={styles.phone}>+91 {phone}</Text>
         </Text>
 
         <TextInput
@@ -62,31 +114,32 @@ export default function RiderOTP() {
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() =>
-            router.replace("/(rider)/(tabs)/dashboard")
-          }
+          onPress={handleVerifyOtp}
+          disabled={loading}
         >
-          <Text style={styles.buttonText}>Verify & Login</Text>
+          {loading ? (
+            <ActivityIndicator color="#000" />
+          ) : (
+            <Text style={styles.buttonText}>Verify & Login</Text>
+          )}
         </TouchableOpacity>
 
-        {/* WRONG NUMBER */}
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.wrongBtn}
+          disabled={loading}
         >
-          <Text style={styles.wrongText}>
-            Wrong number? Change
-          </Text>
+          <Text style={styles.wrongText}>Wrong number? Change</Text>
         </TouchableOpacity>
 
-        {/* RESEND */}
-        <TouchableOpacity>
+        <TouchableOpacity disabled={loading}>
           <Text style={styles.resend}>Resend OTP</Text>
         </TouchableOpacity>
       </Animated.View>
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,

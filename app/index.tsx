@@ -1,29 +1,35 @@
+import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/useAuth";
 import { router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef } from "react";
-// import "react-native-gesture-handler";
-
 import {
   Animated,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { useTheme } from "../context/ThemeContext";
-
-SplashScreen.preventAutoHideAsync(); // IMPORTANT
 
 export default function Splash() {
   const { theme } = useTheme();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   const scale = useRef(new Animated.Value(0.85)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
+  // 🔒 Ensure navigation runs ONLY ONCE
+  const hasNavigatedRef = useRef(false);
+
+
+
   useEffect(() => {
+    // 🔑 Prevent auto hide ONLY once
+    SplashScreen.preventAutoHideAsync();
+
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
-        duration: 1500,
+        duration: 1200,
         useNativeDriver: true,
       }),
       Animated.spring(scale, {
@@ -31,13 +37,34 @@ export default function Splash() {
         friction: 6,
         useNativeDriver: true,
       }),
-    ]).start(async () => {
-      setTimeout(async () => {
-        await SplashScreen.hideAsync();
-        router.replace("/(auth)/rider-login");
-      }, 2000);
-    });
+    ]).start();
   }, []);
+
+console.log("this is the user on top:: ", user)
+
+
+  useEffect(() => {
+    // ⏳ Wait until auth is resolved
+    if (isLoading) return;
+    if (hasNavigatedRef.current) return;
+
+    hasNavigatedRef.current = true;
+
+    const navigate = async () => {
+      await SplashScreen.hideAsync();
+
+      if (isAuthenticated) {
+        router.replace("/(rider)/(tabs)/dashboard");
+      } else {
+        router.replace("/(auth)/rider-login");
+      }
+    };
+
+    // small delay for UX smoothness
+    const timer = setTimeout(navigate, 800);
+
+    return () => clearTimeout(timer);
+  }, [isLoading, isAuthenticated]);
 
   return (
     <View
@@ -78,6 +105,7 @@ export default function Splash() {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,

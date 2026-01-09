@@ -1,18 +1,60 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
+
+
+const API_URL = "http://localhost:5001/api/v1";
 
 export default function PickupDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const { theme } = useTheme();
+  const [loading, setLoading] = useState(true);
+  const [pickup, setPickup] = useState<{ Name: string, Address: string, Contact: string }>({Name: '', Address: '', Contact: ''})
+
+
+
+    const getPickup = async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(
+          `${API_URL}/pickupbyId/${orderId}`,
+          {
+            method: "GET",
+            headers: {
+              "Content-Type": "application/json",
+              "x-client-type": "mobile",
+            },
+          }
+        );
+  
+        const data = await res.json();
+        setPickup(data.data);
+        setLoading(false)
+  
+        if (!res.ok) {
+          throw new Error(data.message || "Failed to send OTP");
+        }
+      } catch (error) {
+        setLoading(false)
+      }
+    };
+  
+    useEffect(() => {
+      getPickup();
+    }, []);
+
+
+    console.log("data:" , pickup)
+
+
 
   return (
     <ScrollView
@@ -48,21 +90,21 @@ export default function PickupDetails() {
         <DetailRow
           icon="person-outline"
           label="Customer"
-          value="Mrs. Sharma"
+          value={pickup?.Name}
           theme={theme}
         />
 
         <DetailRow
           icon="location-outline"
-          label="Apartment 302, Green Valley Apartments"
-          value="MG Road, Bengaluru - 560001"
+          label="Address"
+          value={pickup?.Address}
           theme={theme}
         />
 
         <DetailRow
           icon="time-outline"
-          label="Pickup Address"
-          value="Scheduled Now"
+          label="Phone"
+          value={pickup?.Contact}
           theme={theme}
         />
 

@@ -1,57 +1,62 @@
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Easing,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
 /* ---------- TYPES ---------- */
 type Pickup = {
-  id: string;
-  name: string;
-  address: string;
-  status: "New" | "Scheduled";
+  _id: string;
+  Name: string;
+  Address: string;
 };
 
 /* ---------- MOCK DATA ---------- */
-const DATA: Pickup[] = [
-  {
-    id: "ORD123451",
-    name: "Mrs. Sharma",
-    address: "Green Valley Apts, MG Road, Bengaluru - 560001",
-    status: "New",
-  },
-  {
-    id: "ORD123452",
-    name: "Mr. Verma",
-    address: "Sunshine Towers, HSR Layout, Bengaluru - 560102",
-    status: "Scheduled",
-  },
-  {
-    id: "ORD123453",
-    name: "Ms. Pooja",
-    address: "Royal Residency, Koramangala, Bengaluru - 560034",
-    status: "Scheduled",
-  },
-  {
-    id: "ORD123454",
-    name: "Mr. Khan",
-    address: "Emerald Apartments, JP Nagar, Bengaluru - 560078",
-    status: "Scheduled",
-  },
-];
+// const DATA: Pickup[] = [
+//   {
+//     id: "ORD123451",
+//     name: "Mrs. Sharma",
+//     address: "Green Valley Apts, MG Road, Bengaluru - 560001",
+//     status: "New",
+//   },
+//   {
+//     id: "ORD123452",
+//     name: "Mr. Verma",
+//     address: "Sunshine Towers, HSR Layout, Bengaluru - 560102",
+//     status: "Scheduled",
+//   },
+//   {
+//     id: "ORD123453",
+//     name: "Ms. Pooja",
+//     address: "Royal Residency, Koramangala, Bengaluru - 560034",
+//     status: "Scheduled",
+//   },
+//   {
+//     id: "ORD123454",
+//     name: "Mr. Khan",
+//     address: "Emerald Apartments, JP Nagar, Bengaluru - 560078",
+//     status: "Scheduled",
+//   },
+// ];
+
+const API_URL = "http://localhost:5001/api/v1/rider";
 
 /* ================= SCREEN ================= */
 
 export default function Pickup() {
+  const { user } = useAuth();
+
+  console.log("user:: in pikuos", user)
+
   const { theme } = useTheme();
 
   const [loading, setLoading] = useState(true);
@@ -66,58 +71,80 @@ export default function Pickup() {
   const itemOpacity = useRef<Animated.Value[]>([]);
   const itemTranslate = useRef<Animated.Value[]>([]);
 
+  const getPickups = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(
+        `${API_URL}/getriderpickups?email=${user?.email}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "x-client-type": "mobile",
+          },
+        }
+      );
+
+      const data = await res.json();
+      setPickups(data.Pickups);
+      setLoading(false)
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to send OTP");
+      }
+    } catch (error) {
+      setLoading(false)
+    }
+  };
+
   useEffect(() => {
-    setTimeout(() => {
-      setPickups(DATA);
-      setLoading(false);
-
-      Animated.parallel([
-        Animated.timing(pageOpacity, {
-          toValue: 1,
-          duration: 420,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(pageTranslate, {
-          toValue: 0,
-          duration: 520,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      DATA.forEach((_, i) => {
-        itemOpacity.current[i] = new Animated.Value(0);
-        itemTranslate.current[i] = new Animated.Value(20);
-      });
-
-      Animated.stagger(
-        80,
-        DATA.map((_, i) =>
-          Animated.parallel([
-            Animated.timing(itemOpacity.current[i], {
-              toValue: 1,
-              duration: 360,
-              useNativeDriver: true,
-            }),
-            Animated.timing(itemTranslate.current[i], {
-              toValue: 0,
-              duration: 420,
-              useNativeDriver: true,
-            }),
-          ])
-        )
-      ).start();
-    }, 700);
+    getPickups();
   }, []);
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    setTimeout(() => {
-      setPickups(DATA);
-      setRefreshing(false);
-    }, 900);
-  };
+  // useEffect(() => {
+  //   setTimeout(() => {
+  //     setPickups(DATA);
+  //     setLoading(false);
+
+  //     Animated.parallel([
+  //       Animated.timing(pageOpacity, {
+  //         toValue: 1,
+  //         duration: 420,
+  //         easing: Easing.out(Easing.cubic),
+  //         useNativeDriver: true,
+  //       }),
+  //       Animated.timing(pageTranslate, {
+  //         toValue: 0,
+  //         duration: 520,
+  //         easing: Easing.out(Easing.cubic),
+  //         useNativeDriver: true,
+  //       }),
+  //     ]).start();
+
+  //     DATA.forEach((_, i) => {
+  //       itemOpacity.current[i] = new Animated.Value(0);
+  //       itemTranslate.current[i] = new Animated.Value(20);
+  //     });
+
+  //     Animated.stagger(
+  //       80,
+  //       DATA.map((_, i) =>
+  //         Animated.parallel([
+  //           Animated.timing(itemOpacity.current[i], {
+  //             toValue: 1,
+  //             duration: 360,
+  //             useNativeDriver: true,
+  //           }),
+  //           Animated.timing(itemTranslate.current[i], {
+  //             toValue: 0,
+  //             duration: 420,
+  //             useNativeDriver: true,
+  //           }),
+  //         ])
+  //       )
+  //     ).start();
+  //   }, 700);
+  // }, []);
 
   /* ---------- LOADING ---------- */
   if (loading) {
@@ -142,7 +169,7 @@ export default function Pickup() {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={onRefresh}
+          // onRefresh={onRefresh}
           tintColor={theme.primary}
         />
       }
@@ -175,7 +202,7 @@ export default function Pickup() {
 
       {pickups.map((item, i) => (
         <Animated.View
-          key={item.id}
+          key={item._id}
           style={{
             opacity: itemOpacity.current[i],
             transform: [{ translateY: itemTranslate.current[i] }],
@@ -187,9 +214,7 @@ export default function Pickup() {
               styles.card,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
-            onPress={() =>
-              router.push(`/(rider)/order/pickup/${item.id}`)
-            }
+            onPress={() => router.push(`/(rider)/order/pickup/${item._id}`)}
           >
             <View style={styles.iconWrap}>
               <Ionicons name="location" size={20} color={theme.primary} />
@@ -198,20 +223,12 @@ export default function Pickup() {
             <View style={styles.cardBody}>
               <View style={styles.cardHeader}>
                 <Text style={[styles.orderId, { color: theme.text }]}>
-                  {item.id}
+                  {('wzp-'+(item._id).slice(item._id.length - 5)).toUpperCase()}
                 </Text>
-
-                {item.status === "New" ? (
-                  <View style={styles.newBadge}>
-                    <Text style={styles.newText}>New</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.scheduledText}>Scheduled</Text>
-                )}
               </View>
 
               <Text style={[styles.name, { color: theme.text }]}>
-                {item.name}
+                {item.Name}
               </Text>
 
               <View style={styles.addressRow}>
@@ -224,17 +241,16 @@ export default function Pickup() {
                   style={[styles.address, { color: theme.subText }]}
                   numberOfLines={2}
                 >
-                  {item.address}
+                  {item.Address}
                 </Text>
               </View>
             </View>
-
-            <View
+   <View
               style={[
                 styles.actionBtn,
                 {
                   backgroundColor:
-                    item.status === "New"
+                    1
                       ? theme.primary
                       : theme.border,
                 },
@@ -243,10 +259,9 @@ export default function Pickup() {
               <Ionicons
                 name="chevron-forward"
                 size={18}
-                color={item.status === "New" ? "#000" : theme.subText}
+                color={1 ? "#000" : theme.subText}
               />
-            </View>
-          </TouchableOpacity>
+            </View>          </TouchableOpacity>
         </Animated.View>
       ))}
     </Animated.ScrollView>

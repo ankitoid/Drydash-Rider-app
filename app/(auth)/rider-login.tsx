@@ -1,9 +1,60 @@
 import { router } from "expo-router";
 import { useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
+const API_URL = "http://localhost:5001/api/v1/auth";
 
 export default function RiderLogin() {
+  console.log("RiderLogin rendered");
+
   const [phone, setPhone] = useState("");
+  const [loading, setLoading] = useState(false); // ✅ LOCAL loading
+
+  const handleGetOtp = async () => {
+    if (phone.length !== 10) {
+      Alert.alert("Invalid Number", "Enter a valid 10 digit mobile number");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${API_URL}/loginthroughotp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+        body: JSON.stringify({
+          phoneNumber: phone,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to send OTP");
+      }
+
+      // ✅ Navigate ONLY after success
+      router.push({
+        pathname: "/(auth)/rider-otp",
+        params: { phone },
+      });
+    } catch (error: any) {
+      Alert.alert("Error", error.message);
+    } finally {
+      setLoading(false); // ✅ always reset
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -16,25 +67,28 @@ export default function RiderLogin() {
         style={styles.input}
         keyboardType="phone-pad"
         value={phone}
-        onChangeText={setPhone}
         maxLength={10}
+        onChangeText={setPhone}
       />
 
       <TouchableOpacity
         style={styles.button}
-        onPress={() =>
-          router.push({
-            pathname: "/(auth)/rider-otp",
-            params: { phone },
-          })
-        }
+        onPress={handleGetOtp}
+        disabled={loading}
       >
-        <Text style={styles.buttonText}>Get OTP</Text>
+        {loading ? (
+          <ActivityIndicator color="#000" />
+        ) : (
+          <Text style={styles.buttonText}>Get OTP</Text>
+        )}
       </TouchableOpacity>
     </View>
   );
 }
 
+/* =====================================================
+   Styles
+===================================================== */
 
 const styles = StyleSheet.create({
   container: {
