@@ -48,7 +48,7 @@ type Pickup = {
 //   },
 // ];
 
-const API_URL = "http://localhost:5001/api/v1/rider";
+const API_URL = "https://api.drydash.in/api/v1/rider";
 
 /* ================= SCREEN ================= */
 
