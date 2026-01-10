@@ -62,6 +62,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // 🔑 start as true → Splash waits correctly
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  const isAuthenticated = !!token;
+
   // 🔒 Prevent double execution (StrictMode safe)
   const hasRestoredRef = useRef(false);
 

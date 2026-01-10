@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
@@ -12,9 +13,20 @@ import { useTheme } from "../../../context/ThemeContext";
 
 export default function RiderProfile() {
   const { theme, isDark, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
 
   const TEXT = isDark ? "#FFFFFF" : theme.text;
   const SUBTEXT = isDark ? "#CBD5E1" : theme.subText;
+
+  // ✅ LOGOUT HANDLER
+  const handleLogout = async () => {
+    try {
+      await logout();
+      router.replace("/(auth)/rider-login"); // 🔒 Reset navigation stack
+    } catch (error) {
+      console.log("Logout error:", error);
+    }
+  };
 
   return (
     <ScrollView
@@ -53,13 +65,15 @@ export default function RiderProfile() {
             },
           ]}
         >
-          <Text style={[styles.avatarText, { color: theme.primary }]}>A</Text>
+          <Text style={[styles.avatarText, { color: theme.primary }]}>
+            {user?.name?.slice(0, 1)}
+          </Text>
         </View>
 
-        <Text style={[styles.name, { color: TEXT }]}>Rajesh Kumar</Text>
+        <Text style={[styles.name, { color: TEXT }]}>{user?.name}</Text>
 
         <Text style={[styles.phone, { color: SUBTEXT }]}>
-          +91 98765 43210
+          {user?.phone}
         </Text>
 
         <View style={styles.ratingRow}>
@@ -107,6 +121,7 @@ export default function RiderProfile() {
       {/* LOGOUT */}
       <TouchableOpacity
         activeOpacity={0.85}
+        onPress={handleLogout}
         style={[
           styles.logoutBtn,
           { backgroundColor: isDark ? "#3B1F1F" : "#FEE2E2" },
@@ -123,15 +138,7 @@ export default function RiderProfile() {
 
 function StatCard({ title, value, theme, text, sub }: any) {
   return (
-    <View
-      style={[
-        styles.statCard,
-        {
-          backgroundColor: theme.card,
-          borderColor: "#1F2937",
-        },
-      ]}
-    >
+    <View style={[styles.statCard, { backgroundColor: theme.card }]}>
       <Text style={[styles.statValue, { color: text }]}>{value}</Text>
       <Text style={[styles.statTitle, { color: sub }]}>{title}</Text>
     </View>
@@ -158,19 +165,16 @@ const styles = StyleSheet.create({
     marginTop: 44,
     marginBottom: 6,
   },
-
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     width: 90,
   },
-
   backText: {
     fontSize: 16,
     fontWeight: "700",
   },
-
   profileCard: {
     marginHorizontal: 16,
     marginTop: 8,
@@ -179,7 +183,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
   },
-
   avatarLarge: {
     width: 84,
     height: 84,
@@ -190,65 +193,53 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 12,
   },
-
   avatarText: {
     fontSize: 30,
     fontWeight: "900",
   },
-
   name: {
     fontSize: 18,
     fontWeight: "900",
   },
-
   phone: {
     fontSize: 13,
     marginTop: 4,
   },
-
   ratingRow: {
     flexDirection: "row",
     alignItems: "center",
     marginTop: 8,
     gap: 6,
   },
-
   rating: {
     fontWeight: "800",
   },
-
   statsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginHorizontal: 16,
     marginVertical: 16,
   },
-
   statCard: {
     width: "31%",
     padding: 14,
     borderRadius: 16,
     alignItems: "center",
-    borderWidth: 1,
   },
-
   statValue: {
     fontSize: 16,
     fontWeight: "900",
   },
-
   statTitle: {
     fontSize: 12,
     marginTop: 4,
   },
-
   menuCard: {
     marginHorizontal: 16,
     borderRadius: 18,
     marginBottom: 14,
     overflow: "hidden",
   },
-
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -256,7 +247,6 @@ const styles = StyleSheet.create({
     height: 56,
     gap: 12,
   },
-
   iconPill: {
     width: 34,
     height: 34,
@@ -265,13 +255,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#0F172A",
   },
-
   menuText: {
     flex: 1,
     fontSize: 14,
     fontWeight: "700",
   },
-
   logoutBtn: {
     marginHorizontal: 16,
     marginTop: 10,
@@ -282,7 +270,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
-
   logoutText: {
     fontWeight: "900",
     color: "#EF4444",
