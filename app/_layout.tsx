@@ -1,9 +1,10 @@
 
 import { AuthProvider } from "@/context/AuthContext";
 import { useAuth } from "@/context/useAuth";
-import { Stack, router } from "expo-router";
+import { router, Stack } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { CartProvider } from "../context/CartContext";
 import { ThemeProvider } from "../context/ThemeContext";
 
 function AuthGuard() {
@@ -27,10 +28,14 @@ function AuthGuard() {
 }
 
 export default function RootLayout() {
+  console.log("RootLayout");
+
   return (
     <AuthProvider>
       <ThemeProvider>
-        <AuthGuard />
+        <CartProvider>
+          <Stack screenOptions={{ headerShown: false }} />
+        </CartProvider>
       </ThemeProvider>
     </AuthProvider>
   );

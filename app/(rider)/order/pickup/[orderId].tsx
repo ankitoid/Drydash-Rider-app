@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -17,42 +17,42 @@ export default function PickupDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const { theme } = useTheme();
   const [loading, setLoading] = useState(true);
-  const [pickup, setPickup] = useState<{ Name: string, Address: string, Contact: string }>({Name: '', Address: '', Contact: ''})
+  const [pickup, setPickup] = useState<{ Name: string, Address: string, Contact: string }>({ Name: '', Address: '', Contact: '' })
 
 
 
-    const getPickup = async () => {
-      setLoading(true)
-      try {
-        const res = await fetch(
-          `${API_URL}/pickupbyId/${orderId}`,
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              "x-client-type": "mobile",
-            },
-          }
-        );
-  
-        const data = await res.json();
-        setPickup(data.data);
-        setLoading(false)
-  
-        if (!res.ok) {
-          throw new Error(data.message || "Failed to send OTP");
+  const getPickup = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(
+        `${API_URL}/pickupbyId/${orderId}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "x-client-type": "mobile",
+          },
         }
-      } catch (error) {
-        setLoading(false)
+      );
+
+      const data = await res.json();
+      setPickup(data.data);
+      setLoading(false)
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to send OTP");
       }
-    };
-  
-    useEffect(() => {
-      getPickup();
-    }, []);
+    } catch (error) {
+      setLoading(false)
+    }
+  };
+
+  useEffect(() => {
+    getPickup();
+  }, []);
 
 
-    console.log("data:" , pickup)
+  console.log("data:", pickup)
 
 
 
@@ -116,47 +116,61 @@ export default function PickupDetails() {
         </TouchableOpacity>
       </View>
 
-      {/* SELECT ITEMS */}
-      <Text style={[styles.sectionTitle, { color: theme.text }]}>
-        Select Items for Pickup
-      </Text>
+<Text style={[styles.sectionTitle, { color: theme.text }]}>
+  Select Items for Pickup
+</Text>
 
-      <View style={styles.itemsRow}>
-        <ItemCard label="Laundry" icon="shirt-outline" theme={theme} />
-        <ItemCard label="Shoe Spa" icon="walk-outline" theme={theme} />
-        <ItemCard label="Drywash" icon="water-outline" theme={theme} />
-      </View>
+<View style={styles.itemsRow}>
+  <TouchableOpacity
+    activeOpacity={0.85}
+    onPress={() =>
+      router.push({
+        pathname: "/order/pickup/select-items/[type]",
+        params: { type: "laundry" },
+      })
+    }
+    style={[styles.itemCard, { backgroundColor: theme.card }]}
+  >
+    <View style={styles.iconWrap}>
+      <Ionicons name="shirt-outline" size={24} color={theme.primary} />
+    </View>
+    <Text style={[styles.itemText, { color: theme.text }]}>Laundry</Text>
+  </TouchableOpacity>
 
-      {/* ORDER SUMMARY */}
-      <View style={[styles.card, { backgroundColor: theme.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.text }]}>
-          Order Summary
-        </Text>
+  <TouchableOpacity
+    activeOpacity={0.85}
+    onPress={() =>
+      router.push({
+        pathname: "/order/pickup/select-items/[type]",
+        params: { type: "shoe" },
+      })
+    }
+    style={[styles.itemCard, { backgroundColor: theme.card }]}
+  >
+    <View style={styles.iconWrap}>
+      <Ionicons name="walk-outline" size={24} color={theme.primary} />
+    </View>
+    <Text style={[styles.itemText, { color: theme.text }]}>Shoe Spa</Text>
+  </TouchableOpacity>
 
-        <SummaryRow label="Shirt (2)" price="₹150" theme={theme} />
-        <SummaryRow label="Shoe Cleaning (1)" price="₹200" theme={theme} />
-        <SummaryRow label="Saree Dry Cleaning (1)" price="₹300" theme={theme} />
+  <TouchableOpacity
+    activeOpacity={0.85}
+    onPress={() =>
+      router.push({
+        pathname: "/order/pickup/select-items/[type]",
+        params: { type: "drywash" },
+      })
+    }
+    style={[styles.itemCard, { backgroundColor: theme.card }]}
+  >
+    <View style={styles.iconWrap}>
+      <Ionicons name="water-outline" size={24} color={theme.primary} />
+    </View>
+    <Text style={[styles.itemText, { color: theme.text }]}>Drywash</Text>
+  </TouchableOpacity>
+</View>
 
-        <View style={styles.divider} />
-
-        <SummaryRow label="Estimated Total" price="₹650" theme={theme} />
-        <SummaryRow label="Discount" price="-₹50" theme={theme} green />
-        <SummaryRow
-          label="Total Payable"
-          price="₹600"
-          theme={theme}
-          bold
-        />
-      </View>
-
-      {/* COMPLETE PICKUP */}
-      <TouchableOpacity
-        activeOpacity={0.9}
-        style={[styles.completeBtn, { backgroundColor: theme.primary }]}
-      >
-        <Ionicons name="checkmark-circle" size={20} color="#000" />
-        <Text style={styles.completeText}>Complete Pickup Checklist</Text>
-      </TouchableOpacity>
+    
     </ScrollView>
   );
 }
@@ -292,7 +306,7 @@ const styles = StyleSheet.create({
 
   navigateBtn: {
     marginTop: 14,
-    height: 46,
+    height: 40,
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
@@ -307,20 +321,34 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 10,
   },
+itemsRow: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  marginHorizontal: 16,
+  marginBottom: 16,
+},
 
-  itemsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginHorizontal: 16,
-    marginBottom: 16,
-  },
-  itemCard: {
-    width: "30%",
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: "center",
-  },
-  itemText: { marginTop: 6, fontWeight: "700", fontSize: 12 },
+itemCard: {
+  width: "30%",
+  paddingVertical: 18,
+  borderRadius: 18,
+  alignItems: "center",
+  elevation: 6, // Android shadow
+},
+
+iconWrap: {
+  width: 54,
+  height: 54,
+  borderRadius: 14,
+  alignItems: "center",
+  justifyContent: "center",
+  marginBottom: 8,
+},
+
+itemText: {
+  fontSize: 13,
+  fontWeight: "800",
+},
 
   summaryRow: {
     flexDirection: "row",
