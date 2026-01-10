@@ -1,11 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RiderHeader } from "../../../components/layout/RiderHeader";
 
 export default function RiderTabsLayout() {
+  const insets = useSafeAreaInsets();
+
   return (
-    < >
+    <>
       <View style={styles.container}>
         {/* FIXED RIDER HEADER */}
         <RiderHeader />
@@ -15,7 +18,8 @@ export default function RiderTabsLayout() {
           screenOptions={{
             headerShown: false,
             tabBarStyle: {
-              height: 64,
+              height: 64 + insets.bottom, // Add bottom inset to height
+              paddingBottom: insets.bottom, // Push content above navigation
               backgroundColor: "#0B1F1A",
               borderTopWidth: 0,
             },
@@ -24,6 +28,10 @@ export default function RiderTabsLayout() {
             tabBarLabelStyle: {
               fontSize: 11,
               fontWeight: "600",
+              marginBottom: 4, // Add some spacing from bottom
+            },
+            tabBarIconStyle: {
+              marginTop: 4, // Balance the icon position
             },
           }}
         >

@@ -4,6 +4,7 @@ import { useAuth } from "@/context/useAuth";
 import { router, Stack } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { CartProvider } from "../context/CartContext";
 import { ThemeProvider } from "../context/ThemeContext";
 
@@ -31,12 +32,14 @@ export default function RootLayout() {
   console.log("RootLayout");
 
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <CartProvider>
-          <Stack screenOptions={{ headerShown: false }} />
-        </CartProvider>
-      </ThemeProvider>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <ThemeProvider>
+          <CartProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+          </CartProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
