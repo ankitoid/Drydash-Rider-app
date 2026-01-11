@@ -33,7 +33,8 @@ export default function RootLayout() {
       <AuthProvider>
         <ThemeProvider>
           <CartProvider>
-            <Stack screenOptions={{ headerShown: false }} />
+            {/* ✅ AUTH-AWARE STACK */}
+            <AuthGuard />
           </CartProvider>
         </ThemeProvider>
       </AuthProvider>
