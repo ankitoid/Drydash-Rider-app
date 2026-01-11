@@ -83,6 +83,7 @@ export default function Pickup() {
         <SkeletonCard />
         <SkeletonCard />
         <SkeletonCard />
+        <SkeletonCard />
       </ScrollView>
     );
   }

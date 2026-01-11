@@ -1,8 +1,12 @@
+import CaptureImageModal from "@/components/Modals/CaptureImageModal";
+import ConfirmModal from "@/components/Modals/ConfirmModal";
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import React from "react";
+import moment from "moment";
+import React, { useEffect, useState } from "react";
 import {
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,12 +15,170 @@ import {
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
+/* ===================== INTERFACES ===================== */
+
+interface StatusHistory {
+  intransit: string | null;
+  processing: string | null;
+  readyForDelivery: string | null;
+  deliveryriderassigned: string | null;
+  delivered: string | null;
+  cancelled: string | null;
+}
+
+interface OrderItem {
+  _id: string;
+  heading: string;
+  subHeading: string;
+  quantity: number;
+  price: number;
+  newQtyPrice: number;
+}
+
+interface OrderDetails {
+  _id: string;
+  order_id: string;
+  customerName: string;
+  contactNo: string;
+  address: string;
+  items: OrderItem[];
+  price: number;
+  status: string;
+  statusHistory: StatusHistory;
+  createdAt: string;
+  updatedAt: string;
+  riderName: string;
+  riderDate: string;
+}
+
+/* ===================== COMPONENT ===================== */
+
 export default function DeliveredOrderDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
-  const { theme, isDark } = useTheme();
-  const {user} = useAuth()
+  const [loading, setLoading] = useState(true);
+  const [order, setOrder] = useState<OrderDetails | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [delivering, setDelivering] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [deliveryImage, setDeliveryImage] = useState<string | null>(null);
 
+  const { theme, isDark } = useTheme();
+  const { user } = useAuth();
+
+  const API_URL = "https://api.drydash.in/api/v1/auth";
   const successGreen = "#22C55E";
+
+  /* ===================== API ===================== */
+
+  const getOrderDetails = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/getOrderById/${orderId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+      });
+
+      const json = await res.json();
+
+      console.log("this is the res json detail page==>>", json);
+
+      if (!res.ok) {
+        throw new Error(json.message || "Failed to fetch order");
+      }
+
+      setOrder(json);
+      setLoading(false);
+    } catch (error) {
+      console.log("Order fetch error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    getOrderDetails();
+  }, []);
+
+  console.log("this is the order detail page==>>", order);
+
+  const onImageCaptured = (uri: string) => {
+    setDeliveryImage(uri);
+    setShowCamera(false);
+    setShowConfirm(true);
+  };
+
+  /* ---------- SKELETON ---------- */
+
+function SkeletonHeader() {
+  return (
+    <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+      <View style={styles.skeletonTitle} />
+      <View style={styles.skeletonSub} />
+    </View>
+  );
+}
+
+function SkeletonCard() {
+  return <View style={styles.skeletonCard} />;
+}
+
+
+  /* ===================== LOADING ===================== */
+
+  if (loading || !order) {
+        return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.background }}
+        contentContainerStyle={{ padding: 16 }}
+      >
+        <SkeletonHeader />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </ScrollView>
+    );
+  }
+
+  const onDeliveredPress = () => {
+    setShowCamera(true);
+  };
+
+  const confirmDelivered = async () => {
+    try {
+      setDelivering(true);
+      setShowConfirm(false);
+
+      console.log("Delivered with image:", deliveryImage);
+
+      /**
+       * Example:
+       * const formData = new FormData();
+       * formData.append("image", {
+       *   uri: deliveryImage,
+       *   name: "delivery.jpg",
+       *   type: "image/jpeg",
+       * });
+       *
+       * await fetch(`${API_URL}/markDelivered/${order._id}`, {
+       *   method: "POST",
+       *   body: formData,
+       * });
+       */
+
+      router.back();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDelivering(false);
+    }
+  };
+
+  /* ===================== UI ===================== */
 
   return (
     <ScrollView
@@ -29,9 +191,7 @@ export default function DeliveredOrderDetails() {
         style={[
           styles.header,
           {
-            backgroundColor: isDark
-              ? theme.card
-              : theme.primary,
+            backgroundColor: isDark ? theme.card : theme.primary,
             borderBottomColor: theme.border,
           },
         ]}
@@ -45,65 +205,34 @@ export default function DeliveredOrderDetails() {
         </TouchableOpacity>
 
         <Text
-          style={[
-            styles.headerTitle,
-            { color: isDark ? theme.text : "#fff" },
-          ]}
+          style={[styles.headerTitle, { color: isDark ? theme.text : "#fff" }]}
         >
           Dry Dash
         </Text>
 
-        <View
-          style={[
-            styles.avatar,
-            { backgroundColor: theme.primarySoft },
-          ]}
-        >
-          <Text
-            style={[
-              styles.avatarText,
-              { color: theme.primary },
-            ]}
-          >
-           {(user?.name)?.slice(0,1)}
+        <View style={[styles.avatar, { backgroundColor: theme.primarySoft }]}>
+          <Text style={[styles.avatarText, { color: theme.primary }]}>
+            {user?.name?.slice(0, 1).toUpperCase()}
           </Text>
         </View>
       </View>
 
       {/* STATUS */}
       <View style={styles.statusWrap}>
-        <View
+        {/* <View
           style={[
             styles.statusBadge,
-            {
-              backgroundColor: isDark
-                ? successGreen + "22"
-                : "#DCFCE7",
-            },
+            { backgroundColor: isDark ? successGreen + "22" : "#DCFCE7" },
           ]}
         >
-          <Ionicons
-            name="checkmark-circle"
-            size={18}
-            color={successGreen}
-          />
-          <Text
-            style={[
-              styles.statusText,
-              { color: successGreen },
-            ]}
-          >
+          <Ionicons name="checkmark-circle" size={18} color={successGreen} />
+          <Text style={[styles.statusText, { color: successGreen }]}>
             Delivered
           </Text>
-        </View>
+        </View> */}
 
-        <Text
-          style={[
-            styles.orderId,
-            { color: theme.text },
-          ]}
-        >
-          {orderId}
+        <Text style={[styles.orderId, { color: theme.text }]}>
+          {order.order_id}
         </Text>
       </View>
 
@@ -115,35 +244,49 @@ export default function DeliveredOrderDetails() {
 
         <DetailRow
           icon="person-outline"
-          label="Customer"
-          value="Mrs. Sharma"
+          label="Name"
+          value={order.customerName}
           theme={theme}
         />
 
         <DetailRow
+          icon="call-outline"
+          label="Contact"
+          value={order.contactNo}
+          theme={theme}
+          onPress={() => Linking.openURL(`tel:${order.contactNo}`)}
+          isLink
+        />
+
+        <DetailRow
           icon="location-outline"
-          label="Delivered To"
-          value="Green Valley Apartments, MG Road, Bengaluru"
+          label="Address"
+          value={order.address}
           theme={theme}
         />
 
         <DetailRow
           icon="time-outline"
-          label="Delivered At"
-          value="Today, 6:30 PM"
+          label="Time"
+          value={
+            order?.createdAt ? moment(order.createdAt).format("hh:mm A") : "—"
+          }
           theme={theme}
         />
       </View>
 
       {/* ITEMS */}
       <View style={[styles.card, { backgroundColor: theme.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.text }]}>
-          Items Delivered
-        </Text>
+        <Text style={[styles.cardTitle, { color: theme.text }]}>Items</Text>
 
-        <ItemRow label="Shirt (2)" price="₹150" theme={theme} />
-        <ItemRow label="Shoe Cleaning (1)" price="₹200" theme={theme} />
-        <ItemRow label="Saree Dry Cleaning (1)" price="₹300" theme={theme} />
+        {order.items.map((item) => (
+          <ItemRow
+            key={item._id}
+            label={`${item.heading}  x  ${item.quantity}`}
+            price={`₹${item.newQtyPrice}`}
+            theme={theme}
+          />
+        ))}
       </View>
 
       {/* PAYMENT */}
@@ -152,106 +295,116 @@ export default function DeliveredOrderDetails() {
           Payment Summary
         </Text>
 
-        <SummaryRow label="Subtotal" price="₹650" theme={theme} />
-        <SummaryRow
-          label="Discount"
-          price="-₹50"
-          green
-          theme={theme}
-        />
+        <SummaryRow label="Subtotal" price={`₹${order.price}`} theme={theme} />
 
-        <View
-          style={[
-            styles.divider,
-            { backgroundColor: theme.border },
-          ]}
-        />
+        <View style={[styles.divider, { backgroundColor: theme.border }]} />
 
         <SummaryRow
           label="Total Paid"
-          price="₹600"
+          price={`₹${order.price}`}
           bold
           theme={theme}
         />
-        <SummaryRow
-          label="Payment Mode"
-          price="Online (UPI)"
-          theme={theme}
-        />
       </View>
 
-      {/* CONFIRMATION */}
+      {/* ACTION BUTTONS */}
       <View style={[styles.card, { backgroundColor: theme.card }]}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>
-          Delivery Confirmation
+          Delivery Action's
         </Text>
 
-        <ConfirmRow
-          icon="camera-outline"
-          text="Delivery Photo Uploaded"
-          theme={theme}
-        />
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.deliveredBtn]}
+            activeOpacity={0.8}
+            onPress={onDeliveredPress}
+            disabled={delivering}
+          >
+            <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+            <Text style={styles.actionBtnText}>
+              {delivering ? "Processing..." : "Delivered"}
+            </Text>
+          </TouchableOpacity>
 
-        <ConfirmRow
-          icon="person-circle-outline"
-          text="Customer Signature Captured"
-          theme={theme}
-        />
+          <TouchableOpacity
+            style={[styles.actionBtn, styles.rescheduleBtn]}
+            activeOpacity={0.8}
+            onPress={() => {
+              console.log("Rescheduled pressed");
+              // TODO: open reschedule modal / API
+            }}
+          >
+            <Ionicons name="calendar-outline" size={20} color="#fff" />
+            <Text style={styles.actionBtnText}>Rescheduled</Text>
+          </TouchableOpacity>
+        </View>
       </View>
+      <CaptureImageModal
+        visible={showCamera}
+        onCancel={() => setShowCamera(false)}
+        onImageCaptured={onImageCaptured}
+      />
+
+      <ConfirmModal
+        visible={showConfirm}
+        title="Mark as Delivered?"
+        message="Are you sure you want to mark this delivery as delivered?"
+        confirmText="Yes, Delivered"
+        cancelText="Cancel"
+        onConfirm={confirmDelivered}
+        onCancel={() => setShowConfirm(false)}
+      />
     </ScrollView>
   );
 }
 
-/* ---------- SMALL COMPONENTS ---------- */
+/* ===================== SMALL COMPONENTS ===================== */
 
-function DetailRow({ icon, label, value, theme }: any) {
+function DetailRow({ icon, label, value, theme, onPress, isLink }: any) {
   return (
-    <View style={styles.detailRow}>
+    <TouchableOpacity
+      disabled={!onPress}
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={styles.detailRow}
+    >
       <Ionicons name={icon} size={18} color={theme.primary} />
-      <View style={{ marginLeft: 10 }}>
+
+      <View style={styles.detailContent}>
         <Text style={[styles.detailLabel, { color: theme.subText }]}>
           {label}
         </Text>
-        <Text style={[styles.detailValue, { color: theme.text }]}>
+
+        <Text
+          style={[
+            styles.detailValue,
+            { color: isLink ? theme.primary : theme.text },
+          ]}
+          numberOfLines={0} // ✅ allow unlimited lines
+        >
           {value}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
 function ItemRow({ label, price, theme }: any) {
   return (
     <View style={styles.itemRow}>
-      <Text style={[styles.itemLabel, { color: theme.text }]}>
-        {label}
-      </Text>
-      <Text style={[styles.itemPrice, { color: theme.text }]}>
-        {price}
-      </Text>
+      <Text style={[styles.itemLabel, { color: theme.text }]}>{label}</Text>
+      <Text style={[styles.itemPrice, { color: theme.text }]}>{price}</Text>
     </View>
   );
 }
 
-function SummaryRow({ label, price, bold, green, theme }: any) {
+function SummaryRow({ label, price, bold, theme }: any) {
   return (
     <View style={styles.summaryRow}>
-      <Text
-        style={[
-          styles.summaryLabel,
-          { color: theme.text },
-          bold && { fontWeight: "900" },
-        ]}
-      >
+      <Text style={[styles.summaryLabel, bold && { fontWeight: "900" }]}>
         {label}
       </Text>
-      <Text
-        style={[
-          styles.summaryPrice,
-          green && { color: "#22C55E" },
-          bold && { fontWeight: "900" },
-        ]}
-      >
+      <Text style={[styles.summaryPrice, bold && { fontWeight: "900" }]}>
         {price}
       </Text>
     </View>
@@ -262,14 +415,12 @@ function ConfirmRow({ icon, text, theme }: any) {
   return (
     <View style={styles.confirmRow}>
       <Ionicons name={icon} size={20} color={theme.primary} />
-      <Text style={[styles.confirmText, { color: theme.text }]}>
-        {text}
-      </Text>
+      <Text style={[styles.confirmText, { color: theme.text }]}>{text}</Text>
     </View>
   );
 }
 
-/* ---------- STYLES ---------- */
+/* ===================== STYLES ===================== */
 
 const styles = StyleSheet.create({
   header: {
@@ -292,10 +443,7 @@ const styles = StyleSheet.create({
   },
   avatarText: { fontWeight: "800" },
 
-  statusWrap: {
-    alignItems: "center",
-    marginVertical: 14,
-  },
+  statusWrap: { alignItems: "center", marginVertical: 14 },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -320,8 +468,21 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     marginBottom: 10,
   },
-  detailLabel: { fontSize: 12 },
-  detailValue: { fontSize: 14, fontWeight: "700" },
+
+  detailContent: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  detailLabel: {
+    fontSize: 12,
+  },
+
+  detailValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    flexWrap: "wrap",
+  },
 
   itemRow: {
     flexDirection: "row",
@@ -339,16 +500,61 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 14 },
   summaryPrice: { fontSize: 14, fontWeight: "800" },
 
-  divider: {
-    height: 1,
-    marginVertical: 10,
+  divider: { height: 1, marginVertical: 10 },
+
+  confirmRow: { flexDirection: "row", gap: 10 },
+  confirmText: { fontWeight: "700", fontSize: 14 },
+
+  actionRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
   },
 
-  confirmRow: {
+  actionBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 10,
+    justifyContent: "center",
+    gap: 8,
   },
-  confirmText: { fontWeight: "700", fontSize: 14 },
+
+  deliveredBtn: {
+    backgroundColor: "#22C55E", // green
+  },
+
+  rescheduleBtn: {
+    backgroundColor: "#F59E0B", // amber
+  },
+
+  actionBtnText: {
+    color: "#fff",
+    fontWeight: "900",
+    fontSize: 14,
+  },
+    skeletonTitle: {
+    width: 160,
+    height: 22,
+    borderRadius: 8,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.3,
+    marginBottom: 8,
+  },
+  skeletonSub: {
+    width: 220,
+    height: 14,
+    borderRadius: 6,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.25,
+  },
+  skeletonCard: {
+    height: 86,
+    borderRadius: 16,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.3,
+    marginHorizontal: 16,
+    marginBottom: 12,
+  },
 });

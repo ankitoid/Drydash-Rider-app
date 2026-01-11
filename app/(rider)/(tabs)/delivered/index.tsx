@@ -1,4 +1,5 @@
 // app/(rider)/(tabs)/pickup/index.tsx
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -14,45 +15,22 @@ import {
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
-/* --------- Types & Mock Data --------- */
+/* ================= TYPES ================= */
+
 type Pickup = {
   id: string;
+  orderId: string;
   name: string;
   address: string;
-  status: "New" | "Scheduled";
 };
 
-const DATA: Pickup[] = [
-  {
-    id: "ORD123451",
-    name: "Mrs. Sharma",
-    address: "Green Valley Apts, MG Road, Bengaluru - 560001",
-    status: "New",
-  },
-  {
-    id: "ORD123452",
-    name: "Mr. Verma",
-    address: "Sunshine Towers, HSR Layout, Bengaluru - 560102",
-    status: "Scheduled",
-  },
-  {
-    id: "ORD123453",
-    name: "Ms. Pooja",
-    address: "Royal Residency, Koramangala, Bengaluru - 560034",
-    status: "Scheduled",
-  },
-  {
-    id: "ORD123454",
-    name: "Mr. Khan",
-    address: "Emerald Apartments, JP Nagar, Bengaluru - 560078",
-    status: "Scheduled",
-  },
-];
+const API_URL = "https://api.drydash.in/api/v1";
 
 /* ================= SCREEN ================= */
 
 export default function Pickup() {
   const { theme } = useTheme();
+  const { user, token } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [pickups, setPickups] = useState<Pickup[]>([]);
@@ -65,12 +43,51 @@ export default function Pickup() {
   /* list animations */
   const itemOpacity = useRef<Animated.Value[]>([]);
   const itemTranslate = useRef<Animated.Value[]>([]);
+  
 
-  useEffect(() => {
-    // simulate API fetch
-    setTimeout(() => {
-      setPickups(DATA);
-      setLoading(false);
+  /* ================= API ================= */
+
+  const fetchPickups = async () => {
+    if (!user?.email) return;
+
+    try {
+      setLoading(true);
+
+const res = await fetch(
+      `${API_URL}/getOrdersByFilter?email=${encodeURIComponent(
+        user.email
+      )}&status=delivery+rider+assigned&limit=1000&page=1`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+      }
+    );
+
+      const data = await res.json();
+
+
+      console.log("this is the dataa==>>>",data)
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed to fetch orders");
+      }
+
+      const mapped: Pickup[] = data.orders.map((o: any) => ({
+        id: o._id,
+        orderId: o.order_id,
+        name: o.customerName,
+        phone: o.contactNo,
+        address: o.address,
+      }));
+
+      setPickups(mapped);
+
+      /* prepare animations */
+      itemOpacity.current = mapped.map(() => new Animated.Value(0));
+      itemTranslate.current = mapped.map(() => new Animated.Value(20));
 
       Animated.parallel([
         Animated.timing(pageOpacity, {
@@ -87,19 +104,13 @@ export default function Pickup() {
         }),
       ]).start();
 
-      // prepare list anim values
-      DATA.forEach((_, i) => {
-        itemOpacity.current[i] = new Animated.Value(0);
-        itemTranslate.current[i] = new Animated.Value(20);
-      });
-
       Animated.stagger(
         80,
-        DATA.map((_, i) =>
+        mapped.map((_, i) =>
           Animated.parallel([
             Animated.timing(itemOpacity.current[i], {
               toValue: 1,
-              duration: 380,
+              duration: 360,
               useNativeDriver: true,
             }),
             Animated.timing(itemTranslate.current[i], {
@@ -110,31 +121,37 @@ export default function Pickup() {
           ])
         )
       ).start();
-    }, 700);
-  }, []);
+    } catch (err) {
+      console.error("Pickup fetch error:", err);
+      setPickups([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPickups();
+  }, [user?.email]);
 
   const onRefresh = () => {
     setRefreshing(true);
-    setTimeout(() => {
-      // here you'd re-fetch; we reassign mock data for demo
-      setPickups(DATA);
-      setRefreshing(false);
-    }, 900);
+    fetchPickups();
   };
 
-  /* ================= LOADING / SKELETON ================= */
+  /* ================= LOADING ================= */
 
   if (loading) {
     return (
       <ScrollView
         style={{ flex: 1, backgroundColor: theme.background }}
         contentContainerStyle={{ padding: 16 }}
-        showsVerticalScrollIndicator={false}
       >
         <SkeletonHeader />
         <SkeletonCard />
         <SkeletonCard />
         <SkeletonCard />
+        <SkeletonCard/>
       </ScrollView>
     );
   }
@@ -173,7 +190,7 @@ export default function Pickup() {
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
             Upcoming Delivery
           </Text>
-          <View style={[styles.countBadge, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={styles.countBadge}>
             <Text style={[styles.countText, { color: theme.primary }]}>
               {pickups.length}
             </Text>
@@ -181,7 +198,6 @@ export default function Pickup() {
         </View>
       </Animated.View>
 
-      {/* list */}
       {pickups.map((p, i) => (
         <Animated.View
           key={p.id}
@@ -190,11 +206,15 @@ export default function Pickup() {
             transform: [{ translateY: itemTranslate.current[i] }],
           }}
         >
-          <View
+          <TouchableOpacity
+            activeOpacity={0.9}
             style={[
               styles.card,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
+            onPress={() =>
+              router.push(`/(rider)/order/delivered/${p.id}`)
+            }
           >
             <View style={styles.iconWrap}>
               <Ionicons name="location" size={20} color={theme.primary} />
@@ -203,21 +223,13 @@ export default function Pickup() {
             <View style={styles.cardBody}>
               <View style={styles.cardHeader}>
                 <Text style={[styles.orderId, { color: theme.text }]}>
-                  {p.id}
+                  {p.orderId}
                 </Text>
-
-                {p.status === "New" ? (
-                  <View style={styles.newBadge}>
-                    <Text style={styles.newText}>New</Text>
-                  </View>
-                ) : (
-                  <Text style={[styles.scheduledText, { color: theme.subText }]}>
-                    Scheduled
-                  </Text>
-                )}
               </View>
 
-              <Text style={[styles.name, { color: theme.text }]}>{p.name}</Text>
+              <Text style={[styles.name, { color: theme.text }]}>
+                {p.name}
+              </Text>
 
               <View style={styles.addressRow}>
                 <Ionicons
@@ -234,88 +246,57 @@ export default function Pickup() {
               </View>
             </View>
 
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() =>
-                // navigate to pickup details — change path if you use other folder names
-                router.push(`/(rider)/order/delivered/${p.id}`)
-              }
-              style={[
-                styles.actionBtn,
-                {
-                  backgroundColor: p.status === "New" ? theme.primary : theme.border,
-                },
-              ]}
+            <View
             >
               <Ionicons
                 name="chevron-forward"
                 size={18}
-                color={p.status === "New" ? "#000" : theme.subText}
               />
-            </TouchableOpacity>
-          </View>
+            </View>
+          </TouchableOpacity>
         </Animated.View>
       ))}
     </Animated.ScrollView>
   );
 }
 
-/* ================= SKELETON COMPONENTS ================= */
+/* ================= SKELETON ================= */
 
 function SkeletonHeader() {
   return (
     <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-      <View style={{ width: 160, height: 22, borderRadius: 8, backgroundColor: "#CBD5E1", opacity: 0.3, marginBottom: 8 }} />
-      <View style={{ width: 220, height: 14, borderRadius: 6, backgroundColor: "#CBD5E1", opacity: 0.25 }} />
+      <View style={styles.skeletonTitle} />
+      <View style={styles.skeletonSub} />
     </View>
   );
 }
 
 function SkeletonCard() {
-  return (
-    <View style={{ marginHorizontal: 16, marginBottom: 12 }}>
-      <View style={{ height: 86, borderRadius: 14, backgroundColor: "#CBD5E1", opacity: 0.3 }} />
-    </View>
-  );
+  return <View style={styles.skeletonCard} />;
 }
 
 /* ================= STYLES ================= */
 
 const styles = StyleSheet.create({
-  pageHeader: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-  },
-  pageTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  pageSub: {
-    fontSize: 13,
-    marginTop: 4,
-  },
+  pageHeader: { paddingHorizontal: 16, marginBottom: 12 },
+  pageTitle: { fontSize: 22, fontWeight: "900" },
+  pageSub: { fontSize: 13, marginTop: 4 },
 
   sectionHeader: {
     paddingHorizontal: 16,
     marginBottom: 10,
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
+  sectionTitle: { fontSize: 16, fontWeight: "800" },
+
   countBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
     borderWidth: 1,
   },
-  countText: {
-    fontWeight: "800",
-    fontSize: 12,
-  },
+  countText: { fontWeight: "800", fontSize: 12 },
 
   card: {
     marginHorizontal: 16,
@@ -323,7 +304,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     flexDirection: "row",
-    alignItems: "flex-start",
     marginBottom: 12,
   },
 
@@ -337,21 +317,9 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
 
-  cardBody: {
-    flex: 1,
-  },
-
-  cardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 4,
-  },
-
-  orderId: {
-    fontWeight: "800",
-    fontSize: 14,
-  },
+  cardBody: { flex: 1 },
+  cardHeader: { flexDirection: "row", gap: 8, marginBottom: 4 },
+  orderId: { fontWeight: "800", fontSize: 14 },
 
   newBadge: {
     backgroundColor: "#DCFCE7",
@@ -359,33 +327,12 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 999,
   },
-  newText: {
-    color: "#16A34A",
-    fontSize: 11,
-    fontWeight: "800",
-  },
+  newText: { color: "#16A34A", fontSize: 11, fontWeight: "800" },
 
-  scheduledText: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
+  name: { fontSize: 14, fontWeight: "700", marginBottom: 6 },
 
-  name: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
-
-  addressRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 6,
-  },
-  address: {
-    fontSize: 12,
-    lineHeight: 16,
-    flex: 1,
-  },
+  addressRow: { flexDirection: "row", gap: 6 },
+  address: { fontSize: 12, lineHeight: 16, flex: 1 },
 
   actionBtn: {
     width: 40,
@@ -393,6 +340,29 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    marginLeft: 10,
+  },
+
+  skeletonTitle: {
+    width: 160,
+    height: 22,
+    borderRadius: 8,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.3,
+    marginBottom: 8,
+  },
+  skeletonSub: {
+    width: 220,
+    height: 14,
+    borderRadius: 6,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.25,
+  },
+  skeletonCard: {
+    height: 86,
+    borderRadius: 16,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.3,
+    marginHorizontal: 16,
+    marginBottom: 12,
   },
 });

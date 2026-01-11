@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
@@ -16,6 +17,7 @@ const API_URL = "https://api.drydash.in/api/v1";
 export default function PickupDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const { theme } = useTheme();
+  const {user} = useAuth()
   const [loading, setLoading] = useState(true);
   const [pickup, setPickup] = useState<{ Name: string, Address: string, Contact: string }>({ Name: '', Address: '', Contact: '' })
 
@@ -54,6 +56,38 @@ export default function PickupDetails() {
 
   console.log("data:", pickup)
 
+    /* ---------- SKELETON ---------- */
+  
+  function SkeletonHeader() {
+    return (
+      <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+        <View style={styles.skeletonTitle} />
+        <View style={styles.skeletonSub} />
+      </View>
+    );
+  }
+  
+  function SkeletonCard() {
+    return <View style={styles.skeletonCard} />;
+  }
+
+
+    if (loading || !pickup) {
+          return (
+        <ScrollView
+          style={{ flex: 1, backgroundColor: theme.background }}
+          contentContainerStyle={{ padding: 16 }}
+        >
+          <SkeletonHeader />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </ScrollView>
+      );
+    }
+
 
 
   return (
@@ -71,14 +105,15 @@ export default function PickupDetails() {
         <Text style={styles.headerTitle}>Dry Dash</Text>
 
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>A</Text>
+          <Text style={styles.avatarText}>{(user?.name)?.slice(0,1).toUpperCase().toUpperCase()}</Text>
         </View>
       </View>
 
       {/* ORDER STATUS */}
       <View style={styles.statusWrap}>
         <Text style={styles.statusLabel}>Pickup in Progress</Text>
-        <Text style={styles.orderId}>{orderId}</Text>
+        <Text style={styles.orderId}>{orderId ? `WZP-${orderId.slice(-5)}`.toUpperCase()
+                  : "WZP-----"}</Text>
       </View>
 
       {/* PICKUP DETAILS */}
@@ -372,6 +407,29 @@ itemText: {
     alignItems: "center",
     justifyContent: "center",
     gap: 8,
+  },
+      skeletonTitle: {
+    width: 160,
+    height: 22,
+    borderRadius: 8,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.3,
+    marginBottom: 8,
+  },
+  skeletonSub: {
+    width: 220,
+    height: 14,
+    borderRadius: 6,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.25,
+  },
+  skeletonCard: {
+    height: 86,
+    borderRadius: 16,
+    backgroundColor: "#CBD5E1",
+    opacity: 0.3,
+    marginHorizontal: 16,
+    marginBottom: 12,
   },
   completeText: { fontWeight: "900", color: "#000" },
 });

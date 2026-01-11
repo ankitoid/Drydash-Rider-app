@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
@@ -8,6 +9,7 @@ import { useTheme } from "../../context/ThemeContext";
 export function RiderHeader() {
   const insets = useSafeAreaInsets();
   const { theme, isDark, toggleTheme } = useTheme();
+  const {user} = useAuth()
 
   return (
     <View
@@ -59,7 +61,7 @@ export function RiderHeader() {
           onPress={() => router.push("/(rider)/profile")}
           style={[styles.avatar, { backgroundColor: theme.primarySoft }]}
         >
-          <Text style={[styles.avatarText, { color: theme.primary }]}>A</Text>
+          <Text style={[styles.avatarText, { color: theme.primary }]}>{(user?.name)?.slice(0,1).toUpperCase()}</Text>
         </TouchableOpacity>
       </View>
     </View>
