@@ -88,6 +88,35 @@ export default function Pickup() {
     );
   }
 
+
+  /* ================= EMPTY STATE ================= */
+
+if (!loading && pickups.length === 0) {
+  return (
+    <View
+      style={[
+        styles.emptyWrap,
+        { backgroundColor: theme.background },
+      ]}
+    >
+      <Ionicons
+        name="cube-outline"
+        size={48}
+        color={theme.subText}
+        style={{ marginBottom: 12 }}
+      />
+
+      <Text style={[styles.emptyTitle, { color: theme.text }]}>
+        No pickups for now
+      </Text>
+
+      <Text style={[styles.emptySub, { color: theme.subText }]}>
+        You’re all caught up. New pickups will appear here when assigned.
+      </Text>
+    </View>
+  );
+}
+
   /* ---------- UI ---------- */
   return (
     <ScrollView
@@ -291,4 +320,22 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
   },
+  emptyWrap: {
+  flex: 1,
+  alignItems: "center",
+  justifyContent: "center",
+  paddingHorizontal: 32,
+},
+
+emptyTitle: {
+  fontSize: 16,
+  fontWeight: "800",
+  marginBottom: 6,
+},
+
+emptySub: {
+  fontSize: 13,
+  textAlign: "center",
+  lineHeight: 18,
+},
 });
