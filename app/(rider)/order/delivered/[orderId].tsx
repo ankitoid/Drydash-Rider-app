@@ -1,3 +1,4 @@
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import React from "react";
@@ -13,6 +14,7 @@ import { useTheme } from "../../../../context/ThemeContext";
 export default function DeliveredOrderDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const { theme, isDark } = useTheme();
+  const {user} = useAuth()
 
   const successGreen = "#22C55E";
 
@@ -63,7 +65,7 @@ export default function DeliveredOrderDetails() {
               { color: theme.primary },
             ]}
           >
-            A
+           {(user?.name)?.slice(0,1)}
           </Text>
         </View>
       </View>

@@ -1,4 +1,3 @@
-
 import { AuthProvider } from "@/context/AuthContext";
 import { useAuth } from "@/context/useAuth";
 import { router, Stack } from "expo-router";
@@ -28,13 +27,11 @@ function AuthGuard() {
 }
 
 export default function RootLayout() {
-  console.log("RootLayout");
-
   return (
     <AuthProvider>
       <ThemeProvider>
         <CartProvider>
-          <Stack screenOptions={{ headerShown: false }} />
+          <AuthGuard />
         </CartProvider>
       </ThemeProvider>
     </AuthProvider>
