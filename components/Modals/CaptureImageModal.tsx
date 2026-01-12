@@ -1,15 +1,15 @@
 import {
-    CameraView,
-    useCameraPermissions
+  CameraView,
+  useCameraPermissions
 } from "expo-camera";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Image,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Image,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 interface Props {
@@ -21,6 +21,7 @@ interface Props {
 export default function CaptureImageModal({
   visible,
   onCancel,
+  skipCapture,
   onImageCaptured,
 }: Props) {
   const cameraRef = useRef<CameraView | null>(null); // ✅ FIXED
@@ -74,6 +75,10 @@ export default function CaptureImageModal({
             <View style={styles.actions}>
               <TouchableOpacity onPress={onCancel}>
                 <Text style={styles.cancel}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => skipCapture()}>
+                <Text style={styles.cancel}>Skip Capture</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

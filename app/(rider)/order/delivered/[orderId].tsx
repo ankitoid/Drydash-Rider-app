@@ -66,6 +66,9 @@ export default function DeliveredOrderDetails() {
   const { user } = useAuth();
 
   const API_URL = "https://api.drydash.in/api/v1/auth";
+  const base_url = "https://api.drydash.in/api/v1"
+  const wattiUri = 'https://live-server-101289.wati.io/api/v1'
+  const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwibmFtZWlkIjoiYXl1c2hzaW5naDg0MjAxOEBnbWFpbC5jb20iLCJlbWFpbCI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwiYXV0aF90aW1lIjoiMTIvMDgvMjAyNSAwNzoyMzo1MyIsInRlbmFudF9pZCI6IjEwMTI4OSIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiVEVNUExBVEVfTUFOQUdFUiIsIkRFVkVMT1BFUiIsIkFVVE9NQVRJT05fTUFOQUdFUiJdLCJleHAiOjI1MzQwMjMwMDgwMCwiaXNzIjoiQ2xhcmVfQUkiLCJhdWQiOiJDbGFyZV9BSSJ9.NpVe1fi-RXRuNgCAGzFQLZT6dE7Y-rvlx1SYxLKZ_m4'
   const successGreen = "#22C55E";
 
   /* ===================== API ===================== */
@@ -98,11 +101,208 @@ export default function DeliveredOrderDetails() {
     }
   };
 
+
+const uploadImage = async () => {
+  try {
+    if(deliveryImage)
+    {
+     const response = await fetch(deliveryImage);
+    const blob = await response.blob(); // ✅ binary form
+
+    const formData = new FormData();
+    formData.append("image", blob);
+
+    const res = await fetch(
+      `${base_url}/rider/uploadDeliverImage/${orderId}`,
+      {
+        method: "POST",
+        body: formData,
+        headers: {
+          "x-client-type": "mobile",
+        },
+      }
+    );
+    const json = await res.json();
+    console.log("Upload image response:", json);
+
+    if (!res.ok) {
+      throw new Error(json.message || "Failed to upload image");
+    }
+    }
+   //updating status
+  await updateStatus();
+  await sendWhatsAppTemplateDelivered();
+  getOrderDetails();
+
+  } catch (error) {
+    console.log("Image upload error:", error);
+  }
+}
+
+
+const updateStatus = async () => {
+  try {
+    const res = await fetch(
+      `${API_URL}/updateOrderStatus/${orderId}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ status: "delivered" }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+      }
+    );
+
+    const json = await res.json();
+    console.log("Update status response:", json);
+
+    if (!res.ok) {
+      throw new Error(json.message || "Failed to update order status");
+    }
+  } catch (error) {
+    console.log("Order status update error:", error);
+  }
+};
+
+
+//helper
+
+  const normalizePhoneForWhatsApp = (raw) => {
+    if (!raw) return null;
+    let digits = String(raw).replace(/\D/g, "");
+    if (digits.length === 10) digits = "91" + digits;
+    if (digits.length < 11) return null;
+    return digits;
+  };
+ 
+
+//template
+
+//t1
+
+const sendWhatsAppTemplateDelivered = async () => {
+  try {
+    const phone = normalizePhoneForWhatsApp(order?.contactNo);
+    if (!phone) return false;
+
+    const templatePayload = {
+      template_name: "delivery_success",
+      broadcast_name: `delivery_success_${orderId}_${Date.now()}`,
+      parameters: [
+        { name: "name", value: order?.customerName || "Customer" },
+      ],
+    };
+
+    const sendRes = await fetch(
+      `${wattiUri}/sendTemplateMessage?whatsappNumber=${phone}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+           Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(templatePayload),
+      }
+    );
+
+    return sendRes.ok;
+  } catch (err) {
+    console.error("Error sending delivered template:", err);
+    return false;
+  }
+};
+
+//t2
+
+const sendWhatsAppTemplateRescheduleNoCall = async () => {
+  try {
+    const phone = normalizePhoneForWhatsApp(order?.contactNo);
+    if (!phone) return;
+
+    const templatePayload = {
+      template_name:
+        "delivery_rescheduled__unable_to_reach_customer_",
+      broadcast_name: `delivery_rescheduled__unable_to_reach_customer_${orderId}_${Date.now()}`,
+      parameters: [
+        { name: "name", value: order?.customerName },
+      ],
+    };
+
+    const sendRes = await fetch(
+      `${API_URL}/sendTemplateMessage?whatsappNumber=${phone}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(templatePayload),
+      }
+    );
+
+    if (sendRes.ok) {
+      // toast.success("WhatsApp (unable to reach) sent.");
+    }
+  } catch (error) {
+    console.error(
+      "Error sending reschedule no-call template:",
+      error
+    );
+  }
+};
+
+
+//t3
+const sendWhatsAppTemplateRescheduleWithCall = async () => {
+  try {
+
+    const rescheduleDate = moment(order?.rescheduledDate).format(
+      "MMMM Do YYYY"
+    );
+
+    const phone = normalizePhoneForWhatsApp(order?.contactNo);
+    if (!phone) return;
+
+    const templatePayload = {
+      template_name: "delivery__rescheduling_notification",
+      broadcast_name: `delivery__rescheduling_notification_${orderId}_${Date.now()}`,
+      parameters: [
+        { name: "name", value: order?.customerName },
+        {
+          name: "delivery_rescheduled_date",
+          value: rescheduleDate,
+        },
+      ],
+    };
+
+    const sendRes = await fetch(
+      `${API_URL}/sendTemplateMessage?whatsappNumber=${phone}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(templatePayload),
+      }
+    );
+
+    if (sendRes.ok) {
+     
+    }
+  } catch (error) {
+    console.error(
+      "Error sending reschedule with-call template:",
+      error
+    );
+  }
+};
+
+
+
   useEffect(() => {
     getOrderDetails();
   }, []);
 
-  console.log("this is the order detail page==>>", order);
 
   const onImageCaptured = (uri: string) => {
     setDeliveryImage(uri);
@@ -148,12 +348,20 @@ function SkeletonCard() {
     setShowCamera(true);
   };
 
+  const skipCapture = () => {
+    setDeliveryImage('uri');
+    setShowCamera(false);
+    setShowConfirm(true);
+  }
+
   const confirmDelivered = async () => {
     try {
       setDelivering(true);
       setShowConfirm(false);
 
       console.log("Delivered with image:", deliveryImage);
+      await uploadImage();
+
 
       /**
        * Example:
@@ -327,8 +535,13 @@ function SkeletonCard() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionBtn, styles.rescheduleBtn]}
-            activeOpacity={0.8}
+           style={[
+    styles.actionBtn,
+    styles.rescheduleBtn,
+    { opacity: 0.5 }, // visual disabled effect
+  ]}
+  activeOpacity={1}
+  disabled={true}
             onPress={() => {
               console.log("Rescheduled pressed");
               // TODO: open reschedule modal / API
@@ -343,6 +556,7 @@ function SkeletonCard() {
         visible={showCamera}
         onCancel={() => setShowCamera(false)}
         onImageCaptured={onImageCaptured}
+        skipCapture={skipCapture}
       />
 
       <ConfirmModal

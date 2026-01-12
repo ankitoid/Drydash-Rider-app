@@ -1,8 +1,8 @@
 // app/(rider)/(tabs)/pickup/index.tsx
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -133,9 +133,16 @@ const res = await fetch(
     }
   };
 
-  useEffect(() => {
+  // useEffect(() => {
+  //   fetchPickups();
+  // }, [user?.email, router]);
+
+  useFocusEffect(
+  useCallback(() => {
     fetchPickups();
-  }, [user?.email]);
+  }, [user?.email])
+);
+
 
   const onRefresh = () => {
     setRefreshing(true);
