@@ -25,7 +25,7 @@ const API_URL = "https://api.drydash.in/api/v1/rider";
 
 export default function Pickup() {
   const { user } = useAuth();
-  const { theme } = useTheme();
+  const { theme,isDark } = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [pickups, setPickups] = useState<Pickup[]>([]);

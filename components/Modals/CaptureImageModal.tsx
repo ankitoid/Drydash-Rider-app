@@ -16,6 +16,7 @@ interface Props {
   visible: boolean;
   onCancel: () => void;
   onImageCaptured: (uri: string) => void;
+  skipCapture: () => void;
 }
 
 export default function CaptureImageModal({

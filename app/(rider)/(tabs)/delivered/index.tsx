@@ -1,8 +1,8 @@
-// app/(rider)/(tabs)/pickup/index.tsx
+// app/(rider)/(tabs)/delivered/index.tsx
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -32,8 +32,9 @@ export default function Pickup() {
   const { theme } = useTheme();
   const { user, token } = useAuth();
 
+
   const [loading, setLoading] = useState(true);
-  const [pickups, setPickups] = useState<Pickup[]>([]);
+  const [pickups, setPickups] = useState<Pickup[]>([]); // need to make it deleveries
   const [refreshing, setRefreshing] = useState(false);
 
   /* page animation */
@@ -42,7 +43,19 @@ export default function Pickup() {
 
   /* list animations */
   const itemOpacity = useRef<Animated.Value[]>([]);
-  const itemTranslate = useRef<Animated.Value[]>([]);
+  const itemTranslate = useRef<Animated.Value[]>([]);  
+  const { completedOrderId } = useLocalSearchParams<{
+  completedOrderId?: string;
+}>();
+
+
+useEffect(() => {
+  if (!completedOrderId) return;
+
+  setPickups((prev) => prev.filter((p) => p.id !== completedOrderId));
+  router.setParams({ completedOrderId: undefined });
+}, [completedOrderId]);
+  
 
 
   
@@ -50,7 +63,7 @@ export default function Pickup() {
 
   /* ================= API ================= */
 
-  const fetchPickups = async () => {
+  const fetchPickups = async () => {      // need to make it fetchDeleveries
     if (!user?.email) return;
 
     try {
@@ -142,6 +155,7 @@ const res = await fetch(
     fetchPickups();
   }, [user?.email])
 );
+
 
 
   const onRefresh = () => {
@@ -286,10 +300,15 @@ if (!loading && pickups.length === 0) {
             </View>
 
             <View
+              style={[
+                styles.actionBtn,
+                { backgroundColor: theme.primary },
+              ]}
             >
               <Ionicons
                 name="chevron-forward"
                 size={18}
+                color="#000"
               />
             </View>
           </TouchableOpacity>
