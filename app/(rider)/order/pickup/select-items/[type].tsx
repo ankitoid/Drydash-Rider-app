@@ -1,7 +1,11 @@
 // app/(rider)/order/pickup/select-items/[type].tsx
+import UniversalLoader from "@/components/Loader/UniversalLoader";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as ImageManipulator from "expo-image-manipulator";
+import { SaveFormat } from "expo-image-manipulator";
+import * as Location from "expo-location"; // <-- new
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -18,9 +22,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as ImageManipulator from "expo-image-manipulator";
-import { SaveFormat } from "expo-image-manipulator";
-import * as Location from "expo-location"; // <-- new
 import { useCart } from "../../../../../context/CartContext";
 import { useTheme } from "../../../../../context/ThemeContext";
 import { useAuth } from "../../../../../context/useAuth";
@@ -89,6 +90,7 @@ export default function SelectItems() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const [pickup, setPickup] = useState<any>(null); // fetched pickup details
   const [locationCoords, setLocationCoords] = useState<{
@@ -257,6 +259,7 @@ export default function SelectItems() {
     if (!orderId) return Alert.alert("Error", "No orderId found");
     if (!photos.length)
       return Alert.alert("Error", "At least 1 image required");
+    setConfirmLoading(true);
 
     // Ensure we have location (try to get if not present)
     if (!locationCoords) {
@@ -355,6 +358,8 @@ export default function SelectItems() {
     } catch (error: any) {
       console.error("NETWORK/UPLOAD ERROR:", error);
       Alert.alert("Error", error?.message ?? JSON.stringify(error));
+    } finally {
+      setConfirmLoading(false);
     }
   };
 
@@ -847,25 +852,46 @@ export default function SelectItems() {
                     setPhotos([]);
                     setAudioUri(null);
                   }}
-                  style={[styles.secondaryBtn]}
+                  style={[styles.modalBtn, styles.secondaryBtn]}
                 >
                   <Text style={styles.secondaryBtnText}>Cancel</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   onPress={onCheckout}
+                  disabled={confirmLoading}
                   style={[
-                    styles.primaryBtn,
-                    { backgroundColor: theme.primary },
+                    styles.modalBtn,
+                    {
+                      backgroundColor: confirmLoading
+                        ? "#9CA3AF"
+                        : theme.primary,
+                    },
                   ]}
                 >
-                  <Text style={styles.primaryBtnText}>Confirm</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {confirmLoading ? "Uploading..." : "Confirm"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         </Modal>
       </View>
+      {confirmLoading && (
+        <View
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 999,
+          }}
+        >
+          <UniversalLoader fullscreen />
+        </View>
+      )}
     </View>
   );
 }
@@ -1133,5 +1159,15 @@ const styles = StyleSheet.create({
 
   secondaryBtnText: {
     fontWeight: "700",
+  },
+  halfBtn: {
+    flex: 1,
+  },
+  modalBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
