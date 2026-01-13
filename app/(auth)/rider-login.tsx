@@ -9,42 +9,37 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
+ 
 const API_URL = "https://api.drydash.in/api/v1/auth";
-
+ 
 export default function RiderLogin() {
-  console.log("RiderLogin rendered");
-
   const [phone, setPhone] = useState("");
-  const [loading, setLoading] = useState(false); // ✅ LOCAL loading
-
+  const [loading, setLoading] = useState(false);
+ 
   const handleGetOtp = async () => {
     if (phone.length !== 10) {
       Alert.alert("Invalid Number", "Enter a valid 10 digit mobile number");
       return;
     }
-
+ 
     try {
       setLoading(true);
-
+ 
       const res = await fetch(`${API_URL}/loginthroughotp`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-client-type": "mobile",
         },
-        body: JSON.stringify({
-          phoneNumber: phone,
-        }),
+        body: JSON.stringify({ phoneNumber: phone }),
       });
-
+ 
       const data = await res.json();
-
+ 
       if (!res.ok) {
         throw new Error(data.message || "Failed to send OTP");
       }
-
-      // ✅ Navigate ONLY after success
+ 
       router.push({
         pathname: "/(auth)/rider-otp",
         params: { phone },
@@ -52,15 +47,15 @@ export default function RiderLogin() {
     } catch (error: any) {
       Alert.alert("Error", error.message);
     } finally {
-      setLoading(false); // ✅ always reset
+      setLoading(false);
     }
   };
-
+ 
   return (
     <View style={styles.container}>
       <Text style={styles.brand}>Dry Dash</Text>
       <Text style={styles.heading}>Login to your Account</Text>
-
+ 
       <TextInput
         placeholder="Enter your mobile number"
         placeholderTextColor="#94a3b8"
@@ -70,7 +65,7 @@ export default function RiderLogin() {
         maxLength={10}
         onChangeText={setPhone}
       />
-
+ 
       <TouchableOpacity
         style={styles.button}
         onPress={handleGetOtp}
@@ -85,11 +80,7 @@ export default function RiderLogin() {
     </View>
   );
 }
-
-/* =====================================================
-   Styles
-===================================================== */
-
+ 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
