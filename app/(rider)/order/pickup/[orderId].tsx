@@ -161,7 +161,7 @@ export default function PickupDetails() {
     onPress={() =>
       router.push({
         pathname: "/order/pickup/select-items/[type]",
-        params: { type: "laundry" },
+        params: { type: "laundry", orderId : orderId },
       })
     }
     style={[styles.itemCard, { backgroundColor: theme.card }]}
@@ -177,7 +177,7 @@ export default function PickupDetails() {
     onPress={() =>
       router.push({
         pathname: "/order/pickup/select-items/[type]",
-        params: { type: "shoe" },
+        params: { type: "shoe", orderId : orderId },
       })
     }
     style={[styles.itemCard, { backgroundColor: theme.card }]}
@@ -193,7 +193,7 @@ export default function PickupDetails() {
     onPress={() =>
       router.push({
         pathname: "/order/pickup/select-items/[type]",
-        params: { type: "drywash" },
+        params: { type: "drywash", orderId : orderId },
       })
     }
     style={[styles.itemCard, { backgroundColor: theme.card }]}

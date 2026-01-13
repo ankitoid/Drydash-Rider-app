@@ -4,22 +4,23 @@ import { Audio } from "expo-av";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Image } from "react-native";
-
 import {
-    Alert,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  Keyboard,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../../../../../context/CartContext";
 import { useTheme } from "../../../../../context/ThemeContext";
-
+ 
 /* ---------- Data ---------- */
 const ITEMS: Record<
   string,
@@ -46,20 +47,20 @@ const ITEMS: Record<
     { id: "dry-coat", title: "Coat Dry Clean", price: 400, emoji: "🧥" },
   ],
 };
-
+ 
 const SERVICES = [
   { key: "laundry", label: "Laundry", icon: "shirt-outline" },
   { key: "shoe", label: "Shoe Spa", icon: "walk-outline" },
   { key: "drywash", label: "Drywash", icon: "water-outline" },
 ];
-
+ 
 /* ---------- Component ---------- */
 export default function SelectItems() {
   const params = useLocalSearchParams<{ type?: string; orderId?: string }>();
   const initialType = params?.type ?? "laundry";
-  const orderId = params?.orderId;
+  const orderId = params?.orderId as string | undefined;
   const insets = useSafeAreaInsets();
-
+ 
   const {
     items: cartItems,
     addItem,
@@ -70,18 +71,18 @@ export default function SelectItems() {
     total,
   } = useCart();
   const { theme, isDark } = useTheme();
-
+ 
   const [selected, setSelected] = useState<string>(initialType);
-
   const [checkoutModal, setCheckoutModal] = useState(false);
-
+ 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-
+ 
   const [photos, setPhotos] = useState<string[]>([]);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+
   useEffect(() => {
     return () => {
       if (sound) {
@@ -89,51 +90,144 @@ export default function SelectItems() {
       }
     };
   }, [sound]);
-
+ 
   useEffect(() => {
     if (params?.type) setSelected(params.type);
   }, [params?.type]);
-
+ 
   const items = useMemo(() => ITEMS[selected] ?? [], [selected]);
-
-  // derive available items (not yet added to cart)
   const availableItems = items.filter((i) => getQty(i.id) === 0);
-
   const cartItemsArray = Object.values(cartItems);
   const subtotal = Math.round(total());
-  const discount = subtotal >= 1000 ? Math.round(subtotal * 0.1) : 0;
+ 
+  const [discountPercentStr, setDiscountPercentStr] = useState<string>("0");
+  const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
+ 
+  useEffect(() => {
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+ 
+    const showSub = Keyboard.addListener(showEvent, (e: any) => {
+      const h = e?.endCoordinates?.height ?? 0;
+      setKeyboardHeight(h);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+ 
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+ 
+  const discountPercent = Math.max(
+    0,
+    Math.min(
+      100,
+      Number(discountPercentStr === "" ? 0 : Number(discountPercentStr)) || 0
+    )
+  );
+ 
+  const discount = Math.round((subtotal * discountPercent) / 100);
   const payable = subtotal - discount;
-
-  const onCheckout = () => {
-    if (subtotal <= 0) {
-      Alert.alert("Cart is empty", "Please add items to cart before checkout.");
-      return;
+ 
+  const onCheckout = async () => {
+    console.log("inside checkout sss");
+ 
+    if (!orderId) return Alert.alert("Error", "No orderId found");
+    if (!photos.length) return Alert.alert("Error", "At least 1 image required");
+ 
+    const currObj = {
+      contactNo: "919695502876",
+      customerName: "testing",
+      address: "testing",
+      plantName: "Delhi",
+      items: cartItemsArray.map((it) => ({
+        key: it.title,
+        heading: it.title,
+        subHeading: `${it.price}/pc`,
+        quantity: it.qty,
+        price: it.price,
+        newQtyPrice: it.qty * it.price,
+        type: selected,
+        img: `${it.title.toLowerCase().replace(/\s+/g, "_")}.jpg`,
+      })),
+      price: payable,
+      id: orderId,
+    };
+ 
+    const location = {
+      latitude: 28.515435,
+      longitude: 77.3668854,
+    };
+ 
+    const form = new FormData();
+    form.append("currObj", JSON.stringify(currObj));
+    form.append("location", JSON.stringify(location));
+    form.append("price", String(payable));
+ 
+    for (let i = 0; i < photos.length; i++) {
+      const uri = photos[i];
+      const filename = `image_${i}.jpg`;
+      
+      form.append("image", {
+        uri: Platform.OS === "ios" ? uri.replace("file://", "") : uri,
+        type: "image/jpeg",
+        name: filename,
+      } as any);
     }
-
-    Alert.alert(
-      "Confirm Checkout",
-      `Order total ₹${payable}. Proceed to checkout?`,
-      [
-        { text: "Cancel", style: "cancel" },
+ 
+    // Handle audio if exists
+    if (audioUri) {
+      const voiceFilename = "voice.m4a";
+      form.append("voice", {
+        uri: Platform.OS === "ios" ? audioUri.replace("file://", "") : audioUri,
+        type: "audio/m4a",
+        name: voiceFilename,
+      } as any);
+    }
+ 
+    try {
+      const res = await fetch(
+        `https://api.drydash.in/api/v1/rider/uploadFiles/${orderId}`,
         {
-          text: "Confirm",
-          style: "default",
-          onPress: () => {
-            clear();
-            Alert.alert("Success", "Checkout completed.");
-            router.back();
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            // Don't set Content-Type - let the browser/RN set it with boundary
           },
-        },
-      ],
-      { cancelable: true }
-    );
+          body: form,
+        }
+      );
+ 
+      const json = await res.json();
+      console.log("UPLOAD RESPONSE:", json);
+ 
+      if (!res.ok) {
+        Alert.alert("Failed", json.message || "Upload failed");
+        return;
+      }
+ 
+      Alert.alert("Success", "Files uploaded!");
+      // Clear cart and close modal
+      clear();
+      setPhotos([]);
+      setAudioUri(null);
+      setCheckoutModal(false);
+      router.back();
+    } catch (error) {
+      console.error("Upload error:", error);
+      Alert.alert("Error", "Network error occurred");
+    }
   };
-
+ 
   const deleteItem = (itemId: string) => {
     removeItem(itemId);
   };
-
-  // helper to find emoji across all categories (cart may contain items from other categories)
+ 
   const findEmoji = (id: string) => {
     for (const list of Object.values(ITEMS)) {
       const f = list.find((i) => i.id === id);
@@ -141,46 +235,83 @@ export default function SelectItems() {
     }
     return "📦";
   };
-
+ 
   const openCheckoutModal = async () => {
     if (!cameraPermission?.granted) {
       await requestCameraPermission();
     }
     setCheckoutModal(true);
   };
-
+ 
   const takePhoto = async () => {
     if (!cameraRef.current) return;
     const photo = await cameraRef.current.takePictureAsync();
-    setPhotos((prev) => [...prev, photo.uri]);
+    if (photo) {
+      setPhotos((prev) => [...prev, photo.uri]);
+    }
   };
- const removePhoto = (uri: string) => {
+
+  const removePhoto = (uri: string) => {
     setPhotos((prev) => prev.filter((photoUri) => photoUri !== uri));
   };
-
+ 
   const startRecording = async () => {
-    await Audio.requestPermissionsAsync();
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: true });
-
-    const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
-    );
-    setRecording(recording);
+    try {
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({ 
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+ 
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(recording);
+    } catch (err) {
+      console.error("Failed to start recording", err);
+      Alert.alert("Error", "Could not start recording");
+    }
   };
-
+ 
   const stopRecording = async () => {
     if (!recording) return;
-    await recording.stopAndUnloadAsync();
-    setAudioUri(recording.getURI() || null);
-    setRecording(null);
-  };
-  const playAudio = async () => {
-    if (!audioUri) return;
-    const { sound } = await Audio.Sound.createAsync({ uri: audioUri });
-    setSound(sound);
-    await sound.playAsync();
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setAudioUri(uri || null);
+      setRecording(null);
+    } catch (err) {
+      console.error("Failed to stop recording", err);
+    }
   };
 
+  const playAudio = async () => {
+    if (!audioUri) return;
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: audioUri });
+      setSound(sound);
+      await sound.playAsync();
+    } catch (err) {
+      console.error("Failed to play audio", err);
+    }
+  };
+ 
+  const handleDiscountChange = (text: string) => {
+    let cleaned = text.replace(/[^0-9]/g, "");
+    if (cleaned.length > 1 && cleaned.startsWith("0")) {
+      cleaned = cleaned.replace(/^0+/, "");
+    }
+    if (cleaned.length > 3) cleaned = cleaned.slice(0, 3);
+    if (cleaned !== "" && Number(cleaned) > 100) cleaned = "100";
+    setDiscountPercentStr(cleaned);
+  };
+ 
+  const handleDiscountBlur = () => {
+    if (discountPercentStr === "") setDiscountPercentStr("0");
+    if (Number(discountPercentStr) > 100) setDiscountPercentStr("100");
+    if (Number(discountPercentStr) < 0) setDiscountPercentStr("0");
+  };
+ 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* HEADER */}
@@ -193,7 +324,7 @@ export default function SelectItems() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-
+ 
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: theme.text }]}>
             Add Items
@@ -204,10 +335,10 @@ export default function SelectItems() {
             </Text>
           )}
         </View>
-
+ 
         <View style={styles.headerRight} />
       </View>
-
+ 
       {/* SERVICE TABS */}
       <View
         style={[styles.tabsContainer, { backgroundColor: theme.background }]}
@@ -249,27 +380,27 @@ export default function SelectItems() {
           })}
         </ScrollView>
       </View>
-
+ 
       {/* CONTENT */}
       <View style={styles.content}>
         <ScrollView
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: 16, paddingBottom: 300 }}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: 300 + keyboardHeight,
+          }}
         >
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
             Available Items
           </Text>
-
-          {/* FEATURED TOP 2 */}
-
-          {/* SMALL ROW LIST */}
-          {/* AVAILABLE ITEMS - SINGLE ROW LAYOUT */}
+ 
           <View style={styles.smallRowList}>
             {availableItems.length === 0 && (
               <Text style={{ color: theme.subText }}>No items available</Text>
             )}
-
+ 
             {availableItems.map((item) => (
               <View
                 key={item.id}
@@ -279,7 +410,7 @@ export default function SelectItems() {
                 ]}
               >
                 <Text style={styles.smallEmoji}>{item.emoji}</Text>
-
+ 
                 <View style={{ flex: 1 }}>
                   <Text
                     style={[styles.smallTitle, { color: theme.text }]}
@@ -291,7 +422,7 @@ export default function SelectItems() {
                     ₹{item.price}
                   </Text>
                 </View>
-
+ 
                 <TouchableOpacity
                   onPress={() =>
                     addItem(
@@ -309,8 +440,8 @@ export default function SelectItems() {
               </View>
             ))}
           </View>
-
-          {/* CHECKOUT CARD (shows items added with quantity controls) */}
+ 
+          {/* CHECKOUT CARD */}
           {cartItemsArray.length > 0 && (
             <View
               style={[
@@ -321,7 +452,7 @@ export default function SelectItems() {
               <Text style={[styles.checkoutHeading, { color: theme.text }]}>
                 Items in Order
               </Text>
-
+ 
               {cartItemsArray.map((it: any) => (
                 <View key={it.id} style={styles.checkoutItemRow}>
                   <Text
@@ -329,7 +460,7 @@ export default function SelectItems() {
                   >
                     {findEmoji(it.id)}
                   </Text>
-
+ 
                   <View style={styles.checkoutItemInfo}>
                     <Text
                       style={[styles.checkoutItemTitle, { color: theme.text }]}
@@ -346,7 +477,7 @@ export default function SelectItems() {
                       ₹{it.price} × {it.qty} = ₹{it.price * it.qty}
                     </Text>
                   </View>
-
+ 
                   <View style={styles.checkoutQtyControls}>
                     <TouchableOpacity
                       onPress={() => {
@@ -358,11 +489,11 @@ export default function SelectItems() {
                     >
                       <Ionicons name="remove" size={16} color={theme.text} />
                     </TouchableOpacity>
-
+ 
                     <Text style={[styles.qtyText, { color: theme.text }]}>
                       {it.qty}
                     </Text>
-
+ 
                     <TouchableOpacity
                       onPress={() => setQty(it.id, it.qty + 1)}
                       style={[
@@ -372,7 +503,7 @@ export default function SelectItems() {
                     >
                       <Ionicons name="add" size={16} color="#fff" />
                     </TouchableOpacity>
-
+ 
                     <TouchableOpacity
                       onPress={() => deleteItem(it.id)}
                       style={styles.deleteBtn}
@@ -388,19 +519,19 @@ export default function SelectItems() {
               ))}
             </View>
           )}
-
+ 
           <View style={{ height: 60 }} />
         </ScrollView>
-
-        {/* FIXED CHECKOUT SUMMARY - floating at bottom */}
+ 
+        {/* FIXED CHECKOUT SUMMARY */}
         <View
           style={[
             styles.summaryPanel,
             {
               backgroundColor: theme.card,
               borderColor: theme.border,
-              bottom: insets.bottom + 12, // Account for safe area
-              paddingBottom: insets.bottom > 0 ? 8 : 12, // Extra padding on devices with notch
+              bottom: insets.bottom + keyboardHeight + 12,
+              paddingBottom: insets.bottom > 0 ? 8 : 12,
             },
           ]}
         >
@@ -412,14 +543,46 @@ export default function SelectItems() {
               ₹{subtotal}
             </Text>
           </View>
-
+ 
+          <View style={[styles.summaryTopRow, styles.discountInputRow]}>
+            <Text style={[styles.summaryLabel, { color: theme.subText }]}>
+              Discount %
+            </Text>
+ 
+            <View style={styles.discountInputWrap}>
+              <TextInput
+                value={discountPercentStr}
+                onChangeText={handleDiscountChange}
+                onBlur={handleDiscountBlur}
+                keyboardType="number-pad"
+                maxLength={3}
+                placeholder="0"
+                placeholderTextColor={theme.subText}
+                style={[
+                  styles.discountInput,
+                  {
+                    color: theme.text,
+                    borderColor: theme.border,
+                    backgroundColor: theme.card,
+                  },
+                ]}
+                returnKeyType="done"
+              />
+              <Text style={[styles.percentSign, { color: theme.subText }]}>
+                %
+              </Text>
+            </View>
+          </View>
+ 
           {discount > 0 && (
             <View style={styles.summaryTopRow}>
-              <Text style={[styles.discountLabel]}>Discount (10%)</Text>
+              <Text style={[styles.discountLabel]}>
+                Discount ({discountPercent}%)
+              </Text>
               <Text style={[styles.discountValue]}>-₹{discount}</Text>
             </View>
           )}
-
+ 
           <View style={[styles.summaryTopRow, styles.totalRow]}>
             <Text style={[styles.totalLabel, { color: theme.text }]}>
               Total
@@ -428,7 +591,7 @@ export default function SelectItems() {
               ₹{payable}
             </Text>
           </View>
-
+ 
           <View style={styles.checkoutRow}>
             <TouchableOpacity
               onPress={openCheckoutModal}
@@ -437,7 +600,7 @@ export default function SelectItems() {
             >
               <Text style={styles.checkoutBtnText}>Proceed to Checkout</Text>
             </TouchableOpacity>
-
+ 
             <TouchableOpacity
               onPress={() => clear()}
               style={[styles.clearBtn, { borderColor: theme.border }]}
@@ -448,14 +611,15 @@ export default function SelectItems() {
             </TouchableOpacity>
           </View>
         </View>
-
+ 
+        {/* CHECKOUT MODAL */}
         <Modal visible={checkoutModal} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={[styles.modalCard, { backgroundColor: theme.card }]}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>
                 Pickup Instructions
               </Text>
-
+ 
               {/* CAMERA */}
               {cameraPermission?.granted ? (
                 <CameraView ref={cameraRef} style={styles.camera} />
@@ -471,17 +635,20 @@ export default function SelectItems() {
                   </Text>
                 </View>
               )}
-
+ 
               <TouchableOpacity
                 onPress={takePhoto}
                 style={[styles.primaryBtn, { backgroundColor: theme.primary }]}
               >
                 <Text style={styles.primaryBtnText}>📸 Capture Image</Text>
               </TouchableOpacity>
-
+ 
               {/* IMAGE PREVIEW */}
               {photos.length > 0 && (
-                <ScrollView horizontal style={{ marginTop: 15 ,marginBottom:8 }}>
+                <ScrollView
+                  horizontal
+                  style={{ marginTop: 15, marginBottom: 8 }}
+                >
                   {photos.map((uri) => (
                     <View key={uri} style={styles.imageWrap}>
                       <Image source={{ uri }} style={styles.previewImage} />
@@ -495,12 +662,12 @@ export default function SelectItems() {
                   ))}
                 </ScrollView>
               )}
-
+ 
               {/* AUDIO */}
               <Text style={[styles.audioLabel, { color: theme.text }]}>
                 Voice Instructions
               </Text>
-
+ 
               <TouchableOpacity
                 onPress={recording ? stopRecording : startRecording}
                 style={[
@@ -512,7 +679,7 @@ export default function SelectItems() {
                   {recording ? "⏹ Stop Recording" : "🎤 Record Audio"}
                 </Text>
               </TouchableOpacity>
-
+ 
               {audioUri && (
                 <TouchableOpacity
                   onPress={playAudio}
@@ -521,7 +688,7 @@ export default function SelectItems() {
                   <Text style={styles.primaryBtnText}>▶ Play Audio</Text>
                 </TouchableOpacity>
               )}
-
+ 
               {/* ACTIONS */}
               <View style={styles.modalActions}>
                 <TouchableOpacity
@@ -534,7 +701,7 @@ export default function SelectItems() {
                 >
                   <Text style={styles.secondaryBtnText}>Cancel</Text>
                 </TouchableOpacity>
-
+ 
                 <TouchableOpacity
                   onPress={onCheckout}
                   style={[
@@ -552,11 +719,11 @@ export default function SelectItems() {
     </View>
   );
 }
-
+ 
 /* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
   container: { flex: 1 },
-
+ 
   header: {
     paddingTop: Platform.OS === "ios" ? 52 : 40,
     paddingBottom: 12,
@@ -571,7 +738,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: "700" },
   headerSubtitle: { fontSize: 12, marginTop: 2 },
   headerRight: { width: 40, alignItems: "flex-end" },
-
+ 
   tabsContainer: { paddingVertical: 8 },
   tabs: { paddingHorizontal: 12, alignItems: "center" },
   tab: {
@@ -587,47 +754,11 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   tabText: { fontSize: 13, fontWeight: "700" },
-
+ 
   content: { flex: 1 },
-
+ 
   sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 10 },
-
-  /* FEATURE CARDS (top two) */
-  topGrid: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  featureCard: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    // don't set marginRight here; map will add gap for first card
-  },
-  featureImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  featureEmoji: { fontSize: 26 },
-  featureTitle: { fontSize: 14, fontWeight: "700", flexShrink: 1 },
-  featurePrice: { fontSize: 13, fontWeight: "700", marginTop: 4 },
-  featureAddBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-
-  /* SMALL ROW LIST */
+ 
   smallRowList: { marginTop: 6 },
   smallRowCard: {
     flexDirection: "row",
@@ -648,8 +779,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
-  /* CHECKOUT CARD (inline above summary) */
+ 
   checkoutCard: {
     marginTop: 12,
     borderRadius: 12,
@@ -666,13 +796,13 @@ const styles = StyleSheet.create({
   checkoutItemInfo: { flex: 1, marginLeft: 8 },
   checkoutItemTitle: { fontSize: 14, fontWeight: "700" },
   checkoutItemMeta: { fontSize: 13, marginTop: 2 },
-
+ 
   checkoutQtyControls: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-
+ 
   qtyBtn: {
     width: 36,
     height: 36,
@@ -695,8 +825,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   deleteBtn: { marginLeft: 6 },
-
-  /* SUMMARY (floating) */
+ 
   summaryPanel: {
     position: "absolute",
     left: 12,
@@ -723,7 +852,7 @@ const styles = StyleSheet.create({
   totalRow: { marginTop: 8, paddingTop: 8, borderTopWidth: 1 },
   totalLabel: { fontSize: 16, fontWeight: "700" },
   totalValue: { fontSize: 18, fontWeight: "700" },
-
+ 
   checkoutRow: { flexDirection: "row", gap: 12, marginTop: 12 },
   checkoutBtn: {
     flex: 1,
@@ -741,56 +870,78 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   clearBtnText: { fontSize: 14 },
-
+ 
+  discountInputRow: {
+    alignItems: "center",
+  },
+  discountInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 96,
+    justifyContent: "flex-end",
+  },
+  discountInput: {
+    width: 64,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    textAlign: "right",
+    fontWeight: "700",
+  },
+  percentSign: {
+    marginLeft: 8,
+    fontWeight: "700",
+  },
+ 
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
     padding: 16,
   },
-
+ 
   modalCard: {
     borderRadius: 16,
     padding: 16,
   },
-
+ 
   modalTitle: {
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 8,
   },
-
+ 
   camera: {
     height: 190,
     borderRadius: 8,
     overflow: "hidden",
   },
-
+ 
   primaryBtn: {
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
     marginTop: 10,
-    
   },
-
+ 
   primaryBtnText: {
     color: "#fff",
     fontWeight: "700",
   },
-
+ 
   imageWrap: {
     marginRight: 8,
     position: "relative",
   },
-
+ 
   previewImage: {
-    marginTop:8,
+    marginTop: 8,
     width: 80,
     height: 80,
     borderRadius: 8,
   },
-
+ 
   removeImgBtn: {
     position: "absolute",
     top: 2,
@@ -802,26 +953,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-
+ 
   audioLabel: {
     marginTop: 14,
     fontSize: 15,
     fontWeight: "600",
   },
-
+ 
   audioBtn: {
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
     marginTop: 8,
   },
-
+ 
   modalActions: {
     flexDirection: "row",
     gap: 12,
     marginTop: 14,
   },
-
+ 
   secondaryBtn: {
     flex: 1,
     paddingVertical: 12,
@@ -829,7 +980,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E5E7EB",
     alignItems: "center",
   },
-
+ 
   secondaryBtnText: {
     fontWeight: "700",
   },
