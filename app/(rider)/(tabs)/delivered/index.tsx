@@ -231,23 +231,19 @@ if (!loading && pickups.length === 0) {
         }}
       >
         <View style={styles.pageHeader}>
-          <Text style={[styles.pageTitle, { color: theme.text }]}>
-            Ready for Action
-          </Text>
-          <Text style={[styles.pageSub, { color: theme.subText }]}>
-            Your Delivery Queue
-          </Text>
+          {/* <Text style={[styles.pageSub, { color: theme.subText }]}>
+          </Text> */}
         </View>
 
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
-            Upcoming Delivery
+            Assigned Delivery
           </Text>
-          <View style={styles.countBadge}>
+          {/* <View style={styles.countBadge}>
             <Text style={[styles.countText, { color: theme.primary }]}>
               {pickups.length}
             </Text>
-          </View>
+          </View> */}
         </View>
       </Animated.View>
 
@@ -275,12 +271,12 @@ if (!loading && pickups.length === 0) {
 
             <View style={styles.cardBody}>
               <View style={styles.cardHeader}>
-                <Text style={[styles.orderId, { color: theme.text }]}>
+                <Text style={[styles.orderId, { color: theme.primary }]}>
                   {p.orderId}
                 </Text>
               </View>
 
-              <Text style={[styles.name, { color: theme.text }]}>
+              <Text style={[styles.name, { color: theme.subText }]}>
                 {p.name}
               </Text>
 

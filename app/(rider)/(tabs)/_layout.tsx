@@ -69,7 +69,7 @@ export default function RiderTabsLayout() {
             name="delivered/index"
             options={{
               title: "Delivered",
-              tabBarLabel: "Delivered",
+              tabBarLabel: "Delivery",
               tabBarIcon: ({ color, focused }) => (
                 <Ionicons
                   name={focused ? "checkmark-done" : "checkmark-done-outline"}

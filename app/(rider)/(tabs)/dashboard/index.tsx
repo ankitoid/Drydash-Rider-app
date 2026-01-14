@@ -1227,7 +1227,7 @@ export default function Dashboard() {
         <>
           {/* Priority Pickups */}
           <SectionHeader
-            title="Priority Pickups"
+            title="Pickup"
             subtitle={
               upcomingPickups.length
                 ? `${upcomingPickups.length} waiting`
@@ -1289,8 +1289,7 @@ export default function Dashboard() {
                     lineHeight: 18,
                   }}
                 >
-                  You’re all caught up. New pickups will appear here once
-                  assigned.
+                  You’re all caught up.
                 </Text>
               </View>
             </View>
@@ -1298,7 +1297,7 @@ export default function Dashboard() {
 
           {/* Priority Deliveries */}
           <SectionHeader
-            title="Priority Deliveries"
+            title="Delivery"
             subtitle={
               upcomingDeliveries.length
                 ? `${upcomingDeliveries.length} waiting`
@@ -1368,8 +1367,7 @@ export default function Dashboard() {
                     lineHeight: 18,
                   }}
                 >
-                  You’re all caught up. New pickups will appear here once
-                  assigned.
+                  You’re all caught up.
                 </Text>
               </View>
             </View>
@@ -1385,7 +1383,7 @@ export default function Dashboard() {
               },
             ]}
           >
-            <View
+            {/* <View
               style={[
                 styles.pill,
                 { backgroundColor: theme.card, borderColor: theme.border },
@@ -1397,12 +1395,12 @@ export default function Dashboard() {
               <Text style={[styles.pillValue, { color: theme.text }]}>
                 ₹ -- --
               </Text>
-            </View>
+            </View> */}
 
-            <View style={[styles.ratingBox, { backgroundColor: theme.card }]}>
+            {/* <View style={[styles.ratingBox, { backgroundColor: theme.card }]}>
               <Ionicons name="star" size={12} color="#FACC15" />
               <Text style={[styles.ratingText, { color: theme.text }]}>--</Text>
-            </View>
+            </View> */}
           </Animated.View>
 
           {/* KPI Cards */}

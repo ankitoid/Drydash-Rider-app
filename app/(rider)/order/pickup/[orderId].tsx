@@ -10,6 +10,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Pressable,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -18,36 +19,41 @@ const API_URL = "https://api.drydash.in/api/v1";
 export default function PickupDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
   const { theme } = useTheme();
-  const {user} = useAuth()
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [pickup, setPickup] = useState<{ Name: string, Address: string, Contact: string }>({ Name: '', Address: '', Contact: '' })
+  const [pickup, setPickup] = useState<{
+    Name: string;
+    Address: string;
+    Contact: string;
+  }>({
+    Name: "",
+    Address: "",
+    Contact: "",
+  });
   const [cancelling, setCancelling] = useState(false);
-
-
+  const [cancelHover, setCancelHover] = useState(false);
+  const [navigateHover, setNavigateHover] = useState(false);
 
   const getPickup = async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const res = await fetch(
-        `${API_URL}/pickupbyId/${orderId}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "x-client-type": "mobile",
-          },
-        }
-      );
+      const res = await fetch(`${API_URL}/pickupbyId/${orderId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+      });
 
       const data = await res.json();
       setPickup(data.data);
-      setLoading(false)
+      setLoading(false);
 
       if (!res.ok) {
         throw new Error(data.message || "Failed to send OTP");
       }
     } catch (error) {
-      setLoading(false)
+      setLoading(false);
     }
   };
 
@@ -115,8 +121,8 @@ export default function PickupDetails() {
 
   console.log("data:", pickup);
 
-    /* ---------- SKELETON ---------- */
-  
+  /* ---------- SKELETON ---------- */
+
   function SkeletonHeader() {
     return (
       <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
@@ -125,26 +131,26 @@ export default function PickupDetails() {
       </View>
     );
   }
-  
+
   function SkeletonCard() {
     return <View style={styles.skeletonCard} />;
   }
 
-    if (loading || !pickup) {
-          return (
-        <ScrollView
-          style={{ flex: 1, backgroundColor: theme.background }}
-          contentContainerStyle={{ padding: 16 }}
-        >
-          <SkeletonHeader />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </ScrollView>
-      );
-    }
+  if (loading || !pickup) {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: theme.background }}
+        contentContainerStyle={{ padding: 16 }}
+      >
+        <SkeletonHeader />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+        <SkeletonCard />
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView
@@ -161,15 +167,18 @@ export default function PickupDetails() {
         <Text style={styles.headerTitle}>Dry Dash</Text>
 
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{(user?.name)?.slice(0,1).toUpperCase().toUpperCase()}</Text>
+          <Text style={styles.avatarText}>
+            {user?.name?.slice(0, 1).toUpperCase()}
+          </Text>
         </View>
       </View>
 
       {/* ORDER STATUS */}
       <View style={styles.statusWrap}>
         <Text style={[styles.statusLabel]}>Pickup in Progress</Text>
-        <Text style={[styles.orderId,,{ color: theme.text }]}>{orderId ? `WZP-${orderId.slice(-5)}`.toUpperCase()
-                  : "WZP-----"}</Text>
+        <Text style={[styles.orderId, { color: theme.text }]}>
+          {orderId ? `WZP-${orderId.slice(-5)}`.toUpperCase() : "WZP-----"}
+        </Text>
       </View>
 
       {/* PICKUP DETAILS */}
@@ -180,14 +189,14 @@ export default function PickupDetails() {
 
         <DetailRow
           icon="person-outline"
-          label="Customer"
+          label=""
           value={pickup?.Name}
           theme={theme}
         />
 
         <DetailRow
           icon="location-outline"
-          label="Address"
+          label=""
           value={pickup?.Address}
           theme={theme}
         />
@@ -202,7 +211,7 @@ export default function PickupDetails() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: "#25D366" }]}
+            style={[styles.actionBtn, { backgroundColor: "#10B981" }]}
             onPress={handleWhatsApp}
           >
             <Ionicons name="logo-whatsapp" size={18} color="#fff" />
@@ -210,81 +219,94 @@ export default function PickupDetails() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={[styles.navigateBtn, { backgroundColor: theme.primary }]}
+        <Pressable
+          onHoverIn={() => setNavigateHover(true)}
+          onHoverOut={() => setNavigateHover(false)}
+          style={[
+            styles.navigateBtn,
+            {
+              backgroundColor: theme.primary,
+              opacity: navigateHover ? 0.85 : 1,
+            },
+          ]}
         >
           <Ionicons name="navigate" size={18} color="#000" />
           <Text style={styles.navigateText}>Navigate</Text>
-        </TouchableOpacity>
+        </Pressable>
 
         {/* minimal change: wire up cancel button */}
-        <TouchableOpacity
-          style={[
-            styles.cancelPickupBtn,
-            { backgroundColor: theme.danger, opacity: cancelling ? 0.7 : 1 },
-          ]}
+        <Pressable
+          onHoverIn={() => setCancelHover(true)}
+          onHoverOut={() => setCancelHover(false)}
           onPress={handleCancel}
           disabled={cancelling}
+          style={[
+            styles.cancelPickupBtn,
+            {
+              backgroundColor: cancelHover ? theme.danger : theme.primary,
+              opacity: cancelling ? 0.7 : 1,
+            },
+          ]}
         >
           <Text style={styles.cancelPickupText}>
             {cancelling ? "Cancelling..." : "Cancel Pickup"}
           </Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
-<Text style={[styles.sectionTitle, { color: theme.text }]}>
-  Select Items for Pickup
-</Text>
+      <Text style={[styles.sectionTitle, { color: theme.text }]}>
+        Select Items for Pickup
+      </Text>
 
-<View style={styles.itemsRow}>
-  <TouchableOpacity
-    activeOpacity={0.85}
-    onPress={() =>
-      router.push({
-        pathname: "/order/pickup/select-items/[type]",
-        params: { type: "laundry", orderId : orderId },
-      })
-    }
-    style={[styles.itemCard, { backgroundColor: theme.card }]}
-  >
-    <View style={styles.iconWrap}>
-      <Ionicons name="shirt-outline" size={24} color={theme.primary} />
-    </View>
-    <Text style={[styles.itemText, { color: theme.text }]}>Laundry</Text>
-  </TouchableOpacity>
+      <View style={styles.itemsRow}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() =>
+            router.push({
+              pathname: "/order/pickup/select-items/[type]",
+              params: { type: "laundry", orderId: orderId },
+            })
+          }
+          style={[styles.itemCard, { backgroundColor: theme.card }]}
+        >
+          <View style={styles.iconWrap}>
+            <Ionicons name="shirt-outline" size={24} color={theme.primary} />
+          </View>
+          <Text style={[styles.itemText, { color: theme.text }]}>Laundry</Text>
+        </TouchableOpacity>
 
-  <TouchableOpacity
-    activeOpacity={0.85}
-    onPress={() =>
-      router.push({
-        pathname: "/order/pickup/select-items/[type]",
-        params: { type: "shoe", orderId : orderId },
-      })
-    }
-    style={[styles.itemCard, { backgroundColor: theme.card }]}
-  >
-    <View style={styles.iconWrap}>
-      <Ionicons name="walk-outline" size={24} color={theme.primary} />
-    </View>
-    <Text style={[styles.itemText, { color: theme.text }]}>Shoe Spa</Text>
-  </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() =>
+            router.push({
+              pathname: "/order/pickup/select-items/[type]",
+              params: { type: "shoe", orderId: orderId },
+            })
+          }
+          style={[styles.itemCard, { backgroundColor: theme.card }]}
+        >
+          <View style={styles.iconWrap}>
+            <Ionicons name="walk-outline" size={24} color={theme.primary} />
+          </View>
+          <Text style={[styles.itemText, { color: theme.text }]}>Shoe Spa</Text>
+        </TouchableOpacity>
 
-  <TouchableOpacity
-    activeOpacity={0.85}
-    onPress={() =>
-      router.push({
-        pathname: "/order/pickup/select-items/[type]",
-        params: { type: "drywash", orderId : orderId },
-      })
-    }
-    style={[styles.itemCard, { backgroundColor: theme.card }]}
-  >
-    <View style={styles.iconWrap}>
-      <Ionicons name="water-outline" size={24} color={theme.primary} />
-    </View>
-    <Text style={[styles.itemText, { color: theme.text }]}>Drywash</Text>
-  </TouchableOpacity>
-</View>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() =>
+            router.push({
+              pathname: "/order/pickup/select-items/[type]",
+              params: { type: "drywash", orderId: orderId },
+            })
+          }
+          style={[styles.itemCard, { backgroundColor: theme.card }]}
+        >
+          <View style={styles.iconWrap}>
+            <Ionicons name="water-outline" size={24} color={theme.primary} />
+          </View>
+          <Text style={[styles.itemText, { color: theme.text }]}>Drywash</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -306,9 +328,11 @@ function DetailRow({
     <View style={styles.detailRow}>
       <Ionicons name={icon} size={18} color={theme.primary} />
       <View style={{ marginLeft: 10 }}>
-        <Text style={[styles.detailLabel, { color: theme.subText }]}>
-          {label}
-        </Text>
+       {label ? (
+          <Text style={[styles.detailLabel, { color: theme.subText }]}>
+            {label}
+          </Text>
+        ) : null}
         <Text style={[styles.detailValue, { color: theme.text }]}>{value}</Text>
       </View>
     </View>
@@ -327,9 +351,7 @@ function ItemCard({
   return (
     <View style={[styles.itemCard, { backgroundColor: theme.card }]}>
       <Ionicons name={icon} size={22} color={theme.primary} />
-      <Text style={[styles.itemText, { color: theme.text }]}>
-        {label}
-      </Text>
+      <Text style={[styles.itemText, { color: theme.text }]}>{label}</Text>
     </View>
   );
 }
@@ -375,7 +397,7 @@ function SummaryRow({
 
 const styles = StyleSheet.create({
   header: {
-    paddingTop: 52,
+    paddingTop: 40,
     paddingHorizontal: 16,
     paddingBottom: 16,
     flexDirection: "row",
@@ -426,7 +448,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  navigateText: { fontWeight: "900", color: "#000" },
+  navigateText: { fontWeight: "700", color: "#000" },
 
   cancelPickupBtn: {
     marginTop: 14,
@@ -438,7 +460,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
-  cancelPickupText: { fontWeight: "900", color: "#fff" },
+  cancelPickupText: { fontWeight: "700", color: "#000" },
 
   sectionTitle: {
     fontSize: 16,
@@ -446,34 +468,34 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 10,
   },
-itemsRow: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  marginHorizontal: 16,
-  marginBottom: 16,
-},
+  itemsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginHorizontal: 16,
+    marginBottom: 16,
+  },
 
-itemCard: {
-  width: "30%",
-  paddingVertical: 18,
-  borderRadius: 18,
-  alignItems: "center",
-  elevation: 6, // Android shadow
-},
+  itemCard: {
+    width: "30%",
+    paddingVertical: 18,
+    borderRadius: 18,
+    alignItems: "center",
+    elevation: 6, // Android shadow
+  },
 
-iconWrap: {
-  width: 54,
-  height: 54,
-  borderRadius: 14,
-  alignItems: "center",
-  justifyContent: "center",
-  marginBottom: 8,
-},
+  iconWrap: {
+    width: 54,
+    height: 54,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
 
-itemText: {
-  fontSize: 13,
-  fontWeight: "800",
-},
+  itemText: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
 
   summaryRow: {
     flexDirection: "row",
@@ -498,7 +520,7 @@ itemText: {
     justifyContent: "center",
     gap: 8,
   },
-      skeletonTitle: {
+  skeletonTitle: {
     width: 160,
     height: 22,
     borderRadius: 8,

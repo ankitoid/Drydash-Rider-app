@@ -66,7 +66,7 @@ const handleGetOtp = async () => {
   return (
     <View style={styles.container}>
       <Text style={styles.brand}>Dry Dash</Text>
-      <Text style={styles.heading}>Login to your Account</Text>
+      {/* <Text style={styles.heading}>Captain Login</Text> */}
  
       <TextInput
         placeholder="Enter your mobile number"
@@ -100,12 +100,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 20,
+    paddingBottom: 80,
   },
   brand: {
     color: "#34F5C5",
-    fontSize: 26,
+    fontSize: 36,
     fontWeight: "900",
-    marginBottom: 10,
+    marginBottom: 16,
   },
   heading: {
     color: "#fff",

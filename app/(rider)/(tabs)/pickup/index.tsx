@@ -137,17 +137,14 @@ export default function Pickup() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.pageHeader}>
-        <Text style={[styles.pageTitle, { color: theme.text }]}>
-          Ready for Action
-        </Text>
-        <Text style={[styles.pageSub, { color: theme.subText }]}>
-          Your Pickup Queue
-        </Text>
+        {/* <Text style={[styles.pageSub, { color: theme.subText }]}>
+          Pickup Queue
+        </Text> */}
       </View>
 
       <View style={styles.sectionHeader}>
         <Text style={[styles.sectionTitle, { color: theme.text }]}>
-          Upcoming Pickups
+          Assigned Pickup
         </Text>
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{pickups.length}</Text>
@@ -169,13 +166,13 @@ export default function Pickup() {
             </View>
 
             <View style={styles.cardBody}>
-              <Text style={[styles.orderId, { color: theme.text }]}>
+              <Text style={[styles.orderId, { color: theme.primary }]}>
                 {item._id
                   ? `WZP-${item._id.slice(-5)}`.toUpperCase()
                   : "WZP-----"}
               </Text>
 
-              <Text style={[styles.name, { color: theme.text }]}>
+              <Text style={[styles.name, { color: theme.subText }]}>
                 {item.Name || "Customer"}
               </Text>
 

@@ -135,10 +135,6 @@ export default function RiderOTP() {
       >
         <Text style={styles.heading}>Verify OTP</Text>
 
-        <Text style={styles.subText}>
-          OTP sent to <Text style={styles.phone}>+91 {phone}</Text>
-        </Text>
-
         {message ? <Text style={styles.success}>{message}</Text> : null}
 
         <TextInput
@@ -159,8 +155,20 @@ export default function RiderOTP() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => router.back()} style={styles.wrongBtn}>
-          <Text style={styles.wrongText}>Wrong number? Change</Text>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+            marginTop: 24,
+          }}
+        >
+          <Text style={[styles.subText, { marginBottom: 0 }]}>
+            OTP sent to <Text style={styles.phone}>{phone}</Text>
+          </Text>
+
+          <Text style={styles.wrongText}>Edit</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -191,18 +199,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#0B1F1A",
     justifyContent: "center",
     paddingHorizontal: 20,
+    paddingBottom: 80,
   },
   heading: {
     color: "#fff",
     fontSize: 22,
     fontWeight: "900",
     textAlign: "center",
-    marginBottom: 10,
+    marginBottom: 20,
   },
   subText: {
     color: "#94a3b8",
     textAlign: "center",
-    marginBottom: 8,
+    // marginBottom: 8,
   },
   phone: {
     color: "#34F5C5",
@@ -242,6 +251,7 @@ const styles = StyleSheet.create({
   wrongText: {
     color: "#FCA5A5",
     fontWeight: "600",
+    marginLeft: 6,
   },
   resend: {
     marginTop: 14,

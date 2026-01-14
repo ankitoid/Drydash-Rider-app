@@ -16,7 +16,7 @@ export function RiderHeader() {
       style={[
         styles.container,
         {
-          paddingTop: insets.top,
+          paddingTop: insets.top + 12,
           backgroundColor: theme.header,
           borderBottomColor: theme.border,
         },
@@ -34,7 +34,7 @@ export function RiderHeader() {
       {/* RIGHT */}
       <View style={styles.right}>
         <TouchableOpacity style={styles.iconBtn}>
-          <Ionicons name="notifications-outline" size={22} color={theme.text} />
+          <Ionicons name="notifications-outline" size={16} color="#000" />
         </TouchableOpacity>
 
         {/* THEME TOGGLE */}
@@ -44,13 +44,13 @@ export function RiderHeader() {
             styles.iconBtn,
             {
               backgroundColor: theme.primarySoft,
-              borderRadius: 18,
+              borderRadius: 20,
             },
           ]}
         >
           <Ionicons
             name={isDark ? "sunny-outline" : "moon-outline"}
-            size={18}
+            size={16}
             color={theme.primary}
           />
         </TouchableOpacity>
@@ -72,8 +72,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingHorizontal: 24,
+    paddingBottom: 8,
     borderBottomWidth: 1,
     zIndex: 100,
   },
@@ -85,13 +85,13 @@ const styles = StyleSheet.create({
   },
 
   logo: {
-    width: 26,
-    height: 26,
+    width: 24,
+    height: 24,
     resizeMode: "contain",
   },
 
   title: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: "900",
     letterSpacing: 0.4,
   },
@@ -107,9 +107,9 @@ const styles = StyleSheet.create({
   },
 
   avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
   },

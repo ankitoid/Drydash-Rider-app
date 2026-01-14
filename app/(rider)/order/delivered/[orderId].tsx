@@ -1638,6 +1638,31 @@ export default function DeliveredOrderDetails() {
     Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`);
   };
 
+  const parseNumber = (v: any) =>
+    Number(String(v).replace(/[^\d.-]/g, "")) || 0;
+
+  const subtotal = order.items.reduce(
+    (acc, it) => acc + parseNumber(it.newQtyPrice),
+    0
+  );
+
+  const fmtINR = (n: number) =>
+    new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      maximumFractionDigits: 2,
+    }).format(n);
+
+  // discountAmount = subtotal - paid
+  const paid = parseNumber(order.price);
+  const discountAmount = subtotal - paid;
+
+  // avoid divide-by-zero
+  const discountPercent = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
+
+  // formatted string like “-20%” or “0%”
+  const discountLabel = `-${discountPercent}%`;
+
   /* ===================== UI ===================== */
 
   return (
@@ -1692,33 +1717,31 @@ export default function DeliveredOrderDetails() {
 
         <DetailRow
           icon="person-outline"
-          label="Name"
+          label=""
           value={order.customerName}
           theme={theme}
         />
 
-        <DetailRow
+        {/* <DetailRow
           icon="call-outline"
           label="Contact"
           value={order.contactNo}
           theme={theme}
           onPress={() => Linking.openURL(`tel:${order.contactNo}`)}
           isLink
-        />
+        /> */}
 
         <DetailRow
           icon="location-outline"
-          label="Address"
+          label=""
           value={order.address}
           theme={theme}
         />
 
         <DetailRow
           icon="time-outline"
-          label="Time"
-          value={
-            order?.createdAt ? moment(order.createdAt).format("hh:mm A") : "—"
-          }
+          label=""
+          value={moment(order.updatedAt).format("DD MMM, hh:mm A")}
           theme={theme}
         />
         <View style={styles.actionRow}>
@@ -1731,7 +1754,7 @@ export default function DeliveredOrderDetails() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: "#25D366" }]}
+            style={[styles.actionBtn, { backgroundColor: "#10B981" }]}
             onPress={handleWhatsApp}
           >
             <Ionicons name="logo-whatsapp" size={18} color="#fff" />
@@ -1740,11 +1763,17 @@ export default function DeliveredOrderDetails() {
         </View>
 
         <TouchableOpacity
-          style={[styles.navigateBtn, { backgroundColor: theme.primary,opacity: order?.orderLocation ? 1 : 0.5 }]}
+          style={[
+            styles.navigateBtn,
+            {
+              backgroundColor: theme.primary,
+              opacity: order?.orderLocation ? 1 : 0.5,
+            },
+          ]}
           onPress={handleNavigate}
           disabled={!order?.orderLocation}
         >
-          <Ionicons name="navigate" size={18} color="#000" />
+          <Ionicons name="navigate" size={18} color="#fff" />
           <Text style={styles.navigateText}>Navigate</Text>
         </TouchableOpacity>
       </View>
@@ -1769,16 +1798,11 @@ export default function DeliveredOrderDetails() {
           Payment Summary
         </Text>
 
-        <SummaryRow label="Subtotal" price={`₹${order.price}`} theme={theme} />
+        <SummaryRow label="Subtotal" price={fmtINR(subtotal)} theme={theme} />
 
-        <View style={[styles.divider, { backgroundColor: theme.border }]} />
+        <SummaryRow label="Discount" price={discountLabel} theme={theme} />
 
-        <SummaryRow
-          label="Total Paid"
-          price={`₹${order.price}`}
-          bold
-          theme={theme}
-        />
+        <SummaryRow label="Total" price={fmtINR(paid)} bold theme={theme} />
       </View>
 
       {/* ACTION BUTTONS */}
@@ -2038,9 +2062,11 @@ function DetailRow({ icon, label, value, theme, onPress, isLink }: any) {
       <Ionicons name={icon} size={18} color={theme.primary} />
 
       <View style={styles.detailContent}>
-        <Text style={[styles.detailLabel, { color: theme.subText }]}>
-          {label}
-        </Text>
+        {label ? (
+          <Text style={[styles.detailLabel, { color: theme.subText }]}>
+            {label}
+          </Text>
+        ) : null}
 
         <Text
           style={[
@@ -2108,7 +2134,7 @@ function ConfirmRow({ icon, text, theme }: any) {
 
 const styles = StyleSheet.create({
   header: {
-    paddingTop: 52,
+    paddingTop: 40,
     paddingHorizontal: 16,
     paddingBottom: 16,
     flexDirection: "row",
@@ -2222,7 +2248,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
-  navigateText: { fontWeight: "900", color: "#000" },
+  navigateText: { fontWeight: "900", color: "#fff" },
 
   actionBtnText: {
     color: "#fff",

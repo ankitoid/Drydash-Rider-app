@@ -1174,7 +1174,7 @@ const styles = StyleSheet.create({
   },
  
   camera: {
-    height: 190,
+    height: 350,
     borderRadius: 8,
     overflow: "hidden",
   },
