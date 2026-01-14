@@ -1158,6 +1158,11 @@ interface OrderItem {
   newQtyPrice: number;
 }
 
+interface OrderLocation {
+  latitude: number;
+  longitude: number;
+}
+
 interface OrderDetails {
   _id: string;
   order_id: string;
@@ -1168,6 +1173,7 @@ interface OrderDetails {
   price: number;
   status: string;
   statusHistory: StatusHistory;
+  orderLocation?: OrderLocation;
   createdAt: string;
   updatedAt: string;
   riderName: string;
@@ -1217,6 +1223,21 @@ export default function DeliveredOrderDetails() {
       xhr.open("GET", uri, true);
       xhr.send(null);
     });
+
+  const handleNavigate = () => {
+    if (!order?.orderLocation) return;
+
+    const { latitude, longitude } = order.orderLocation;
+
+    const url =
+      Platform.OS === "ios"
+        ? `maps://?daddr=${latitude},${longitude}`
+        : `google.navigation:q=${latitude},${longitude}`;
+
+    Linking.openURL(url).catch((err) =>
+      console.error("Failed to open map", err)
+    );
+  };
 
   const normalizePhoneForWhatsApp = (raw: any) => {
     if (!raw) return null;
@@ -1719,7 +1740,9 @@ export default function DeliveredOrderDetails() {
         </View>
 
         <TouchableOpacity
-          style={[styles.navigateBtn, { backgroundColor: theme.primary }]}
+          style={[styles.navigateBtn, { backgroundColor: theme.primary,opacity: order?.orderLocation ? 1 : 0.5 }]}
+          onPress={handleNavigate}
+          disabled={!order?.orderLocation}
         >
           <Ionicons name="navigate" size={18} color="#000" />
           <Text style={styles.navigateText}>Navigate</Text>
