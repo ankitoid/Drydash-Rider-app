@@ -3,13 +3,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  Alert,
   Linking,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Alert, // <-- added
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -167,8 +167,8 @@ export default function PickupDetails() {
 
       {/* ORDER STATUS */}
       <View style={styles.statusWrap}>
-        <Text style={styles.statusLabel}>Pickup in Progress</Text>
-        <Text style={styles.orderId}>{orderId ? `WZP-${orderId.slice(-5)}`.toUpperCase()
+        <Text style={[styles.statusLabel]}>Pickup in Progress</Text>
+        <Text style={[styles.orderId,,{ color: theme.text }]}>{orderId ? `WZP-${orderId.slice(-5)}`.toUpperCase()
                   : "WZP-----"}</Text>
       </View>
 

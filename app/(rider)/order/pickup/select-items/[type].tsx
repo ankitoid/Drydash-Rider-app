@@ -1,4 +1,6 @@
 import UniversalLoader from "@/components/Loader/UniversalLoader";
+import { productImages } from "@/constants/productImages";
+import { PRODUCTS } from "@/constants/products";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -24,8 +26,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../../../../../context/CartContext";
 import { useTheme } from "../../../../../context/ThemeContext";
 import { useAuth } from "../../../../../context/useAuth";
-import { PRODUCTS } from "@/constants/products";
-import { productImages } from "@/constants/productImages";
  
 const API_URL = "https://api.drydash.in/api/v1";
  
@@ -514,7 +514,8 @@ export default function SelectItems() {
           </Text>
           {orderId && (
             <Text style={[styles.headerSubtitle, { color: theme.subText }]}>
-              Order #{orderId}
+              {orderId ? `WZP-${orderId.slice(-5)}`.toUpperCase()
+                  : "WZP-----"}
             </Text>
           )}
         </View>
