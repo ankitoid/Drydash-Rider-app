@@ -5,10 +5,13 @@ export type CartItem = {
   id: string;
   title: string;
   price: number;
-  image?: any; // require(...) or uri
   qty: number;
-  meta?: any;
+  img?: any;        
+  type?: string;    
+  imgKey?: string; 
+  meta?: any; 
 };
+ 
 
 type CartCtx = {
   items: CartItem[];

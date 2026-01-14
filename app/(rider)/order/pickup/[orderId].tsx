@@ -3,14 +3,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  Linking,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  Alert, // <-- added
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
-
 
 const API_URL = "https://api.drydash.in/api/v1";
 
@@ -20,6 +21,7 @@ export default function PickupDetails() {
   const {user} = useAuth()
   const [loading, setLoading] = useState(true);
   const [pickup, setPickup] = useState<{ Name: string, Address: string, Contact: string }>({ Name: '', Address: '', Contact: '' })
+  const [cancelling, setCancelling] = useState(false);
 
 
 
@@ -51,10 +53,67 @@ export default function PickupDetails() {
 
   useEffect(() => {
     getPickup();
-  }, []);
+  }, [orderId]);
 
+  const handleCancel = () => {
+    Alert.alert(
+      "Cancel pickup",
+      "Are you sure you want to cancel this pickup?",
+      [
+        { text: "No", style: "cancel" },
+        { text: "Yes", onPress: () => cancelPickup() },
+      ],
+      { cancelable: true }
+    );
+  };
 
-  console.log("data:", pickup)
+  const cancelPickup = async () => {
+    if (!orderId) {
+      Alert.alert("Error", "Missing order id");
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      const res = await fetch(`${API_URL}/deletePickup/${orderId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Failed to cancel pickup");
+      }
+
+      Alert.alert("Success", data?.message || "Pickup cancelled");
+      // go back to previous screen (same behavior as web where you remove from list)
+      router.back();
+    } catch (err: any) {
+      Alert.alert("Error", err?.message || "Failed to cancel pickup");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const phoneNumber = pickup?.Contact;
+
+  const handleCall = () => {
+    if (!phoneNumber) return;
+    Linking.openURL(`tel:${phoneNumber}`);
+  };
+
+  const handleWhatsApp = () => {
+    if (!phoneNumber) return;
+    const message = encodeURIComponent(
+      "Hello, I am your pickup rider. I have arrived for your laundry pickup."
+    );
+    Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`);
+  };
+
+  console.log("data:", pickup);
 
     /* ---------- SKELETON ---------- */
   
@@ -71,7 +130,6 @@ export default function PickupDetails() {
     return <View style={styles.skeletonCard} />;
   }
 
-
     if (loading || !pickup) {
           return (
         <ScrollView
@@ -87,8 +145,6 @@ export default function PickupDetails() {
         </ScrollView>
       );
     }
-
-
 
   return (
     <ScrollView
@@ -136,18 +192,43 @@ export default function PickupDetails() {
           theme={theme}
         />
 
-        <DetailRow
-          icon="time-outline"
-          label="Phone"
-          value={pickup?.Contact}
-          theme={theme}
-        />
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: "#10B981" }]}
+            onPress={handleCall}
+          >
+            <Ionicons name="call-outline" size={18} color="#fff" />
+            <Text style={styles.actionText}>Call</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: "#25D366" }]}
+            onPress={handleWhatsApp}
+          >
+            <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+            <Text style={styles.actionText}>WhatsApp</Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           style={[styles.navigateBtn, { backgroundColor: theme.primary }]}
         >
           <Ionicons name="navigate" size={18} color="#000" />
           <Text style={styles.navigateText}>Navigate</Text>
+        </TouchableOpacity>
+
+        {/* minimal change: wire up cancel button */}
+        <TouchableOpacity
+          style={[
+            styles.cancelPickupBtn,
+            { backgroundColor: theme.danger, opacity: cancelling ? 0.7 : 1 },
+          ]}
+          onPress={handleCancel}
+          disabled={cancelling}
+        >
+          <Text style={styles.cancelPickupText}>
+            {cancelling ? "Cancelling..." : "Cancel Pickup"}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -204,8 +285,6 @@ export default function PickupDetails() {
     <Text style={[styles.itemText, { color: theme.text }]}>Drywash</Text>
   </TouchableOpacity>
 </View>
-
-    
     </ScrollView>
   );
 }
@@ -230,9 +309,7 @@ function DetailRow({
         <Text style={[styles.detailLabel, { color: theme.subText }]}>
           {label}
         </Text>
-        <Text style={[styles.detailValue, { color: theme.text }]}>
-          {value}
-        </Text>
+        <Text style={[styles.detailValue, { color: theme.text }]}>{value}</Text>
       </View>
     </View>
   );
@@ -348,7 +425,20 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
   },
+
   navigateText: { fontWeight: "900", color: "#000" },
+
+  cancelPickupBtn: {
+    marginTop: 14,
+    height: 40,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+
+  cancelPickupText: { fontWeight: "900", color: "#fff" },
 
   sectionTitle: {
     fontSize: 16,
@@ -432,4 +522,25 @@ itemText: {
     marginBottom: 12,
   },
   completeText: { fontWeight: "900", color: "#000" },
+  actionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 12,
+  },
+
+  actionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 6,
+  },
+
+  actionText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
 });
