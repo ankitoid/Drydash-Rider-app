@@ -16,40 +16,52 @@ export default function RiderLogin() {
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
  
-  const handleGetOtp = async () => {
-    if (phone.length !== 10) {
-      Alert.alert("Invalid Number", "Enter a valid 10 digit mobile number");
-      return;
+const handleGetOtp = async () => {
+  if (phone.length !== 10) {
+    Alert.alert(
+      "Invalid Mobile Number",
+      "Please enter a valid 10-digit mobile number."
+    );
+    return;
+  }
+
+  try {
+    setLoading(true);
+
+    const res = await fetch(`${API_URL}/loginthroughotp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-client-type": "mobile",
+      },
+      body: JSON.stringify({ phoneNumber: phone }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message);
     }
- 
-    try {
-      setLoading(true);
- 
-      const res = await fetch(`${API_URL}/loginthroughotp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-client-type": "mobile",
-        },
-        body: JSON.stringify({ phoneNumber: phone }),
-      });
- 
-      const data = await res.json();
- 
-      if (!res.ok) {
-        throw new Error(data.message || "Failed to send OTP");
-      }
- 
-      router.push({
-        pathname: "/(auth)/rider-otp",
-        params: { phone },
-      });
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+
+    // Alert.alert(
+    //   "OTP Sent",
+    //   "We’ve sent a 6-digit OTP to your WhatsApp number."
+    // );
+
+    router.push({
+      pathname: "/(auth)/rider-otp",
+      params: { phone },
+    });
+  } catch (error: any) {
+    Alert.alert(
+      "Unable to Send OTP",
+      error.message || "Please try again after some time."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
  
   return (
     <View style={styles.container}>
