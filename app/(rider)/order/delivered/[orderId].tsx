@@ -361,6 +361,7 @@
 // };
 
 
+
 //   /* ===================== LIFECYCLE ===================== */
 
 //   useEffect(() => {
@@ -852,7 +853,7 @@
 //       <Text
 //         style={[
 //           styles.summaryLabel,
-//           { color: theme.subText }, 
+//           { color: theme.subText },
 //         ]}
 //       >
 //         {label}
@@ -1113,7 +1114,6 @@
 //   },
 // });
 
-
 import CaptureImageModal from "@/components/Modals/CaptureImageModal";
 import ConfirmModal from "@/components/Modals/ConfirmModal";
 import { useAuth } from "@/context/useAuth";
@@ -1234,7 +1234,9 @@ export default function DeliveredOrderDetails() {
       const templatePayload = {
         template_name: "delivery_success",
         broadcast_name: `delivery_success_${orderId}_${Date.now()}`,
-        parameters: [{ name: "name", value: order?.customerName || "Customer" }],
+        parameters: [
+          { name: "name", value: order?.customerName || "Customer" },
+        ],
       };
 
       const sendRes = await fetch(
@@ -1256,7 +1258,9 @@ export default function DeliveredOrderDetails() {
     }
   };
 
-  const sendWhatsAppTemplateRescheduleNoCall = async (orderIdParam?: string) => {
+  const sendWhatsAppTemplateRescheduleNoCall = async (
+    orderIdParam?: string
+  ) => {
     try {
       const phone = normalizePhoneForWhatsApp(order?.contactNo);
       if (!phone) return false;
@@ -1389,7 +1393,8 @@ export default function DeliveredOrderDetails() {
         // Build FormData
         const formData = new FormData();
         const isWeb = Platform.OS === "web";
-        const filename = deliveryImage.split("/").pop() || `delivery_${Date.now()}.jpg`;
+        const filename =
+          deliveryImage.split("/").pop() || `delivery_${Date.now()}.jpg`;
 
         if (isWeb) {
           // convert to Blob and append with filename
@@ -1398,14 +1403,11 @@ export default function DeliveredOrderDetails() {
           console.log("Appended web blob", filename, (blob as any).size);
         } else {
           // Mobile: append file object
-          formData.append(
-            "image",
-            {
-              uri: deliveryImage,
-              name: filename,
-              type: "image/jpeg",
-            } as any
-          );
+          formData.append("image", {
+            uri: deliveryImage,
+            name: filename,
+            type: "image/jpeg",
+          } as any);
           console.log("Appended mobile file", filename, deliveryImage);
         }
 
@@ -1430,7 +1432,9 @@ export default function DeliveredOrderDetails() {
           throw new Error(json?.message || "Failed to upload image");
         }
       } else {
-        console.log("Skipping image upload (no image or user skipped capture).");
+        console.log(
+          "Skipping image upload (no image or user skipped capture)."
+        );
       }
 
       // updatng status
@@ -1679,6 +1683,12 @@ export default function DeliveredOrderDetails() {
           }
           theme={theme}
         />
+        <TouchableOpacity
+          style={[styles.navigateBtn, { backgroundColor: theme.primary }]}
+        >
+          <Ionicons name="navigate" size={18} color="#000" />
+          <Text style={styles.navigateText}>Navigate</Text>
+        </TouchableOpacity>
       </View>
 
       {/* ITEMS */}
@@ -2010,7 +2020,9 @@ function SummaryRow({
 }) {
   return (
     <View style={styles.summaryRow}>
-      <Text style={[styles.summaryLabel, { color: theme.subText }]}>{label}</Text>
+      <Text style={[styles.summaryLabel, { color: theme.subText }]}>
+        {label}
+      </Text>
 
       <Text
         style={[
@@ -2142,6 +2154,17 @@ const styles = StyleSheet.create({
   rescheduleBtn: {
     backgroundColor: "#F59E0B", // amber
   },
+
+  navigateBtn: {
+    marginTop: 14,
+    height: 40,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  navigateText: { fontWeight: "900", color: "#000" },
 
   actionBtnText: {
     color: "#fff",
