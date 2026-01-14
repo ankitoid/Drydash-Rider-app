@@ -1,6 +1,4 @@
 import UniversalLoader from "@/components/Loader/UniversalLoader";
-import { productImages } from "@/constants/productImages";
-import { PRODUCTS } from "@/constants/products";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -26,6 +24,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../../../../../context/CartContext";
 import { useTheme } from "../../../../../context/ThemeContext";
 import { useAuth } from "../../../../../context/useAuth";
+import { PRODUCTS } from "@/constants/products";
+import { productImages } from "@/constants/productImages";
  
 const API_URL = "https://api.drydash.in/api/v1";
  
@@ -161,7 +161,44 @@ export default function SelectItems() {
       return { ok: false, err };
     }
   };
- 
+
+  const sendWatiMessage = async (customerNumber: string, name: string, totalBill: number) => {
+  try {
+    const url =
+      "https://live-mt-server.wati.io/101289/api/v1/sendTemplateMessage" +
+      `?whatsappNumber=${customerNumber}`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json-patch+json",
+        Authorization: "Bearer YOUR_WATI_TOKEN_HERE", // ⚠️ Move to env in production
+      },
+      body: JSON.stringify({
+        parameters: [
+          { name: "name", value: name },
+          { name: "total_Bill", value: String(totalBill) },
+        ],
+        template_name: "sudhanshu_collection_under_2k",
+        broadcast_name: `sudhanshu_collection_under_2k_${Date.now()}`,
+      }),
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      console.warn("WATI message failed:", res.status, json);
+      return false;
+    }
+
+    console.log("WATI message sent:", json);
+    return true;
+  } catch (err) {
+    console.error("WATI send error:", err);
+    return false;
+  }
+};
+
   /* ---------- Location helper ---------- */
   const getDeviceLocation = async (): Promise<{
     latitude: number;
@@ -271,30 +308,31 @@ export default function SelectItems() {
     setConfirmLoading(true);
  
     // Ensure we have location (try to get if not present)
-    if (!locationCoords) {
-      const coords = await getDeviceLocation();
-      if (!coords) {
-        // fallback coordinates if user denies permission or failed
-        setLocationCoords({ latitude: 28.515435, longitude: 77.3668854 });
+    // Use a local coords variable to avoid race with setLocationCoords
+    let coords = locationCoords;
+    if (!coords) {
+      const deviceCoords = await getDeviceLocation();
+      if (deviceCoords) {
+        coords = deviceCoords;
+      } else {
+        coords = { latitude: 28.515435, longitude: 77.3668854 };
         console.warn("Using fallback location");
       }
+      // persist for future use
+      setLocationCoords(coords);
     }
  
     const currObj = buildCurrObj();
  
     // Defensive check: ensure currObj has required fields
     if (!currObj.id) {
+      setConfirmLoading(false);
       return Alert.alert("Error", "Order ID missing from payload");
     }
  
     const form = new FormData();
     form.append("currObj", JSON.stringify(currObj));
-    form.append(
-      "location",
-      JSON.stringify(
-        locationCoords ?? { latitude: 28.515435, longitude: 77.3668854 }
-      )
-    );
+    form.append("location", JSON.stringify(coords));
     form.append("price", String(payable));
  
     const isWeb = Platform.OS === "web";
@@ -354,6 +392,7 @@ export default function SelectItems() {
  
       if (!res.ok) {
         console.error("Upload failed. Response not OK.", res.status, json);
+        setConfirmLoading(false);
         return Alert.alert("Failed", json?.message || "Upload failed");
       }
  
@@ -371,6 +410,14 @@ export default function SelectItems() {
         // If you want to retry automatically, implement a retry here.
       } else {
         console.log("Pickup marked complete:", completeRes);
+        
+        try {
+          const phone = currObj.contactNo ?? pickup?.Contact ?? "";
+          const name = currObj.customerName ?? pickup?.Name ?? "";
+          await sendWatiMessage(phone, name, payable);
+        } catch (err) {
+          console.warn("sendWatiMessage failed:", err);
+        }
       }
  
       Alert.alert("Success", "Files uploaded!");
@@ -514,8 +561,7 @@ export default function SelectItems() {
           </Text>
           {orderId && (
             <Text style={[styles.headerSubtitle, { color: theme.subText }]}>
-              {orderId ? `WZP-${orderId.slice(-5)}`.toUpperCase()
-                  : "WZP-----"}
+              Order #{orderId}
             </Text>
           )}
         </View>

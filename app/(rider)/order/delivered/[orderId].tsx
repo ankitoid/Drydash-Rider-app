@@ -1600,6 +1600,23 @@ export default function DeliveredOrderDetails() {
     }
   };
 
+  const phoneNumber = order?.contactNo;
+
+  const handleCall = () => {
+    if (!phoneNumber) return;
+    Linking.openURL(`tel:${phoneNumber}`);
+  };
+
+  const handleWhatsApp = () => {
+    if (!phoneNumber) return;
+
+    const message = encodeURIComponent(
+      "Hello, I am your delivery rider. I am on the way to deliver your order."
+    );
+
+    Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`);
+  };
+
   /* ===================== UI ===================== */
 
   return (
@@ -1683,6 +1700,24 @@ export default function DeliveredOrderDetails() {
           }
           theme={theme}
         />
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: "#10B981" }]}
+            onPress={handleCall}
+          >
+            <Ionicons name="call-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Call</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: "#25D366" }]}
+            onPress={handleWhatsApp}
+          >
+            <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>WhatsApp</Text>
+          </TouchableOpacity>
+        </View>
+
         <TouchableOpacity
           style={[styles.navigateBtn, { backgroundColor: theme.primary }]}
         >
@@ -2139,7 +2174,7 @@ const styles = StyleSheet.create({
 
   actionBtn: {
     flex: 1,
-    height: 48,
+    height: 40,
     borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
@@ -2270,5 +2305,20 @@ const modalStyles = StyleSheet.create({
     color: "#000",
     fontWeight: "900",
     fontSize: 14,
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 10,
+  },
+
+  actionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 6,
   },
 });
