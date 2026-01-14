@@ -1,7 +1,7 @@
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -25,7 +25,11 @@ const API_URL = "https://api.drydash.in/api/v1/rider";
 
 export default function Pickup() {
   const { user } = useAuth();
-  const { theme,isDark } = useTheme();
+  const { theme, isDark } = useTheme();
+
+  const { completedOrderId } = useLocalSearchParams<{
+    completedOrderId?: string;
+  }>();
 
   const [loading, setLoading] = useState(true);
   const [pickups, setPickups] = useState<Pickup[]>([]);
@@ -38,9 +42,7 @@ export default function Pickup() {
     setLoading(true);
     try {
       const res = await fetch(
-        `${API_URL}/getriderpickups?email=${encodeURIComponent(
-          user.email
-        )}`,
+        `${API_URL}/getriderpickups?email=${encodeURIComponent(user.email)}`,
         {
           method: "GET",
           headers: {
@@ -50,10 +52,10 @@ export default function Pickup() {
         }
       );
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
       if (!res.ok) {
-        throw new Error(data.message || "Failed to fetch pickups");
+        throw new Error((data && data.message) || "Failed to fetch pickups");
       }
 
       setPickups(Array.isArray(data.Pickups) ? data.Pickups : []);
@@ -66,11 +68,18 @@ export default function Pickup() {
     }
   };
 
-  /* ---------- LOAD AFTER USER IS READY ---------- */
-  useEffect(() => {
-    if (!user?.email) return;
-    getPickups();
-  }, [user?.email]);
+  useFocusEffect(
+    useCallback(() => {
+      if (completedOrderId) {
+        setPickups((prev) => prev.filter((p) => p._id !== completedOrderId));
+        router.setParams({ completedOrderId: undefined });
+      }
+      if (user?.email) {
+        getPickups();
+      }
+      return;
+    }, [user?.email, completedOrderId])
+  );
 
   /* ---------- LOADING ---------- */
   if (loading) {
@@ -88,34 +97,27 @@ export default function Pickup() {
     );
   }
 
-
   /* ================= EMPTY STATE ================= */
+  if (!loading && pickups.length === 0) {
+    return (
+      <View style={[styles.emptyWrap, { backgroundColor: theme.background }]}>
+        <Ionicons
+          name="cube-outline"
+          size={48}
+          color={theme.subText}
+          style={{ marginBottom: 12 }}
+        />
 
-if (!loading && pickups.length === 0) {
-  return (
-    <View
-      style={[
-        styles.emptyWrap,
-        { backgroundColor: theme.background },
-      ]}
-    >
-      <Ionicons
-        name="cube-outline"
-        size={48}
-        color={theme.subText}
-        style={{ marginBottom: 12 }}
-      />
+        <Text style={[styles.emptyTitle, { color: theme.text }]}>
+          No pickups for now
+        </Text>
 
-      <Text style={[styles.emptyTitle, { color: theme.text }]}>
-        No pickups for now
-      </Text>
-
-      <Text style={[styles.emptySub, { color: theme.subText }]}>
-        You’re all caught up. New pickups will appear here when assigned.
-      </Text>
-    </View>
-  );
-}
+        <Text style={[styles.emptySub, { color: theme.subText }]}>
+          You’re all caught up. New pickups will appear here when assigned.
+        </Text>
+      </View>
+    );
+  }
 
   /* ---------- UI ---------- */
   return (
@@ -125,7 +127,10 @@ if (!loading && pickups.length === 0) {
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
-          onRefresh={getPickups}
+          onRefresh={() => {
+            setRefreshing(true);
+            getPickups();
+          }}
           tintColor={theme.primary}
         />
       }
@@ -157,30 +162,20 @@ if (!loading && pickups.length === 0) {
               styles.card,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
-            onPress={() =>
-              router.push(`/(rider)/order/pickup/${item._id}`)
-            }
+            onPress={() => router.push(`/(rider)/order/pickup/${item._id}`)}
           >
             <View style={styles.iconWrap}>
-              <Ionicons
-                name="location"
-                size={20}
-                color={theme.primary}
-              />
+              <Ionicons name="location" size={20} color={theme.primary} />
             </View>
 
             <View style={styles.cardBody}>
-              <Text
-                style={[styles.orderId, { color: theme.text }]}
-              >
+              <Text style={[styles.orderId, { color: theme.text }]}>
                 {item._id
                   ? `WZP-${item._id.slice(-5)}`.toUpperCase()
                   : "WZP-----"}
               </Text>
 
-              <Text
-                style={[styles.name, { color: theme.text }]}
-              >
+              <Text style={[styles.name, { color: theme.text }]}>
                 {item.Name || "Customer"}
               </Text>
 
@@ -191,10 +186,7 @@ if (!loading && pickups.length === 0) {
                   color={theme.subText}
                 />
                 <Text
-                  style={[
-                    styles.address,
-                    { color: theme.subText },
-                  ]}
+                  style={[styles.address, { color: theme.subText }]}
                   numberOfLines={2}
                 >
                   {item.Address || "Address not available"}
@@ -203,16 +195,9 @@ if (!loading && pickups.length === 0) {
             </View>
 
             <View
-              style={[
-                styles.actionBtn,
-                { backgroundColor: theme.primary },
-              ]}
+              style={[styles.actionBtn, { backgroundColor: theme.primary }]}
             >
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color="#000"
-              />
+              <Ionicons name="chevron-forward" size={18} color="#000" />
             </View>
           </TouchableOpacity>
         </View>
@@ -321,21 +306,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   emptyWrap: {
-  flex: 1,
-  alignItems: "center",
-  justifyContent: "center",
-  paddingHorizontal: 32,
-},
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
 
-emptyTitle: {
-  fontSize: 16,
-  fontWeight: "800",
-  marginBottom: 6,
-},
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
 
-emptySub: {
-  fontSize: 13,
-  textAlign: "center",
-  lineHeight: 18,
-},
+  emptySub: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+  },
 });

@@ -153,6 +153,29 @@ export default function SelectItems() {
     }
   };
 
+  // mark pickup complete on server (called after successful file upload)
+  const completePickup = async (id: string) => {
+    try {
+      const res = await fetch(`${API_URL}/completePickup/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        console.warn("completePickup failed:", res.status, json);
+        return { ok: false, status: res.status, json };
+      }
+      return { ok: true, status: res.status, json };
+    } catch (err) {
+      console.error("completePickup error:", err);
+      return { ok: false, err };
+    }
+  };
+
   /* ---------- Location helper ---------- */
   const getDeviceLocation = async (): Promise<{
     latitude: number;
@@ -348,13 +371,29 @@ export default function SelectItems() {
         return Alert.alert("Failed", json?.message || "Upload failed");
       }
 
+      const completeRes = await completePickup(orderId);
+      if (!completeRes.ok) {
+        // upload succeeded but status update failed — warn user but keep uploaded files
+      console.warn("Files uploaded but failed to update pickup status", completeRes);
+        Alert.alert(
+          "Partial Success",
+          "Files uploaded but failed to update pickup status. Please try marking it complete again from the dashboard."
+        );
+        // If you want to retry automatically, implement a retry here.
+      } else {
+        console.log("Pickup marked complete:", completeRes);
+      }
+
       Alert.alert("Success", "Files uploaded!");
 
       clear();
       setPhotos([]);
       setAudioUri(null);
       setCheckoutModal(false);
-      router.back();
+      router.replace({
+        pathname: "/(rider)/(tabs)/pickup",
+        params: { completedOrderId: orderId },
+      });
     } catch (error: any) {
       console.error("NETWORK/UPLOAD ERROR:", error);
       Alert.alert("Error", error?.message ?? JSON.stringify(error));
