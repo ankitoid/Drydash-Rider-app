@@ -1264,25 +1264,30 @@ export default function Dashboard() {
             <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
               <View
                 style={{
-                  backgroundColor: "#F8FAFC",
+                  backgroundColor: theme.card,
                   borderRadius: 12,
                   padding: 16,
                   borderWidth: 1,
-                  borderColor: "#E2E8F0",
+                  borderColor: theme.border,
                 }}
               >
                 <Text
                   style={{
                     fontSize: 14,
                     fontWeight: "800",
-                    color: "#334155",
+                    color: theme.text, 
                     marginBottom: 6,
                   }}
                 >
                   No immediate pickups
                 </Text>
+
                 <Text
-                  style={{ fontSize: 13, color: "#64748B", lineHeight: 18 }}
+                  style={{
+                    fontSize: 13,
+                    color: theme.subText, 
+                    lineHeight: 18,
+                  }}
                 >
                   You’re all caught up. New pickups will appear here once
                   assigned.
@@ -1335,7 +1340,39 @@ export default function Dashboard() {
               keyExtractor={(i) => i.id}
             />
           ) : (
-            <EmptyMini label="No immediate deliveries" />
+                        <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+              <View
+                style={{
+                  backgroundColor: theme.card,
+                  borderRadius: 12,
+                  padding: 16,
+                  borderWidth: 1,
+                  borderColor: theme.border,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "800",
+                    color: theme.text, 
+                    marginBottom: 6,
+                  }}
+                >
+                  No immediate deliveries
+                </Text>
+
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: theme.subText, 
+                    lineHeight: 18,
+                  }}
+                >
+                  You’re all caught up. New pickups will appear here once
+                  assigned.
+                </Text>
+              </View>
+            </View>
           )}
 
           {/* Top Row (wallet + rating) */}
@@ -1364,9 +1401,7 @@ export default function Dashboard() {
 
             <View style={[styles.ratingBox, { backgroundColor: theme.card }]}>
               <Ionicons name="star" size={12} color="#FACC15" />
-              <Text style={[styles.ratingText, { color: theme.text }]}>
-                --
-              </Text>
+              <Text style={[styles.ratingText, { color: theme.text }]}>--</Text>
             </View>
           </Animated.View>
 
