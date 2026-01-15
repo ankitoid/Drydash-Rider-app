@@ -22,7 +22,7 @@ const TOKEN_KEY = "DRYDASH_RIDER_TOKEN";
 ===================================================== */
 
 export interface Rider {
-  id: string;
+  _id: string;
   name: string;
   email: string;
   phone: string;
@@ -103,7 +103,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         const profile = data.profile;
 
         const mappedUser: Rider = {
-          id: profile._id,
+          _id: profile._id,
           name: profile.name,
           email: profile.email,
           phone: profile.phone,

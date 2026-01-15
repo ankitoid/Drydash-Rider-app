@@ -1,10 +1,12 @@
 // app/(rider)/(tabs)/delivered/index.tsx
 import { useAuth } from "@/context/useAuth";
+import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
+  AppState,
   Easing,
   RefreshControl,
   ScrollView,
@@ -20,6 +22,7 @@ import { useTheme } from "../../../../context/ThemeContext";
 type Pickup = {
   id: string;
   orderId: string;
+  phone : string,
   name: string;
   address: string;
 };
@@ -162,6 +165,62 @@ const res = await fetch(
     setRefreshing(true);
     fetchPickups();
   };
+
+
+    /* ================= SOCKET REALTIME DELIVERY ================= */
+
+  useEffect(() => {
+    const riderId = user?._id;
+    if (!riderId) return;
+
+    // connect socket
+    socket.connect();
+
+    // join rider room
+    socket.emit("joinRider", { riderId });
+
+    // listen realtime delivery assignment
+    socket.on("assignOrder", ({ order }) => {
+      console.log("Realtime delivery assigned =>", order);
+
+      const mapped: Pickup = {
+        id: order._id,
+        orderId: order.order_id,
+        name: order.customerName,
+        phone: order.contactNo,
+        address: order.address,
+      };
+
+      setPickups((prev) => {
+        const exists = prev.some((d) => d.id === mapped.id);
+        if (exists) return prev;
+
+        return [mapped, ...prev];
+      });
+    });
+
+    return () => {
+      socket.off("assignOrder");
+      // ❌ do not disconnect socket here
+    };
+  }, [user?._id]);
+
+  /* ---------- SOCKET FOREGROUND HANDLING (OPTIONAL BUT GOOD) ---------- */
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        const riderId = user?._id;
+        if (!riderId) return;
+
+        if (!socket.connected) {
+          socket.connect();
+          socket.emit("joinRider", { riderId });
+        }
+      }
+    });
+
+    return () => sub.remove();
+  }, [user?._id]);
 
   /* ================= LOADING ================= */
 

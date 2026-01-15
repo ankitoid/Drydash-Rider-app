@@ -1,8 +1,10 @@
 import { useAuth } from "@/context/useAuth";
+import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
-import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
+  AppState,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -80,6 +82,51 @@ export default function Pickup() {
       return;
     }, [user?.email, completedOrderId])
   );
+  /* ---------- SOCKET: CONNECT + JOIN RIDER ROOM ---------- */
+  useEffect(() => {
+    // riderId is best, fallback to email if your auth does not have _id
+    const riderId = user?._id;
+
+    if (!riderId) return;
+
+    // connect
+    socket.connect();
+
+    // join room
+    socket.emit("joinRider", { riderId });
+
+    // listen realtime assignment
+    socket.on("riderAssignedPickup", ({ pickup }) => {
+      setPickups((prev) => {
+        const exists = prev.some((p) => p._id === pickup._id);
+        if (exists) return prev;
+
+        return [pickup, ...prev];
+      });
+    });
+
+    return () => {
+      socket.off("riderAssignedPickup");
+      // ❌ do not disconnect here (keep socket alive)
+    };
+  }, [user?._id]);
+
+  /* ---------- SOCKET: HANDLE APP FOREGROUND ---------- */
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        const riderId = user?._id;
+        if (!riderId) return;
+
+        if (!socket.connected) {
+          socket.connect();
+          socket.emit("joinRider", { riderId });
+        }
+      }
+    });
+
+    return () => subscription.remove();
+  }, [user?._id]);
 
   /* ---------- LOADING ---------- */
   if (loading) {
