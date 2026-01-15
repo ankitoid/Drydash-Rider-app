@@ -108,13 +108,13 @@ export default function RiderLogin() {
               },
             ]}
           >
-            <View style={styles.logoWrapper}>
+            {/* <View style={styles.logoWrapper}>
               <View style={styles.logoOuter}>
                 <View style={styles.logoInner}>
                   <Text style={styles.sparkle}>✨</Text>
                 </View>
               </View>
-            </View>
+            </View> */}
             
             <Text style={styles.brandTitle}>DryDash</Text>
             <View style={styles.captainBadge}>
@@ -136,7 +136,7 @@ export default function RiderLogin() {
             <View style={styles.welcomeBox}>
               <Text style={styles.welcomeTitle}>Welcome Back! 👋</Text>
               <Text style={styles.welcomeDesc}>
-                Enter your mobile number to get started with your deliveries
+                Enter your mobile number to get started.
               </Text>
             </View>
 
@@ -144,9 +144,6 @@ export default function RiderLogin() {
             <View style={styles.inputCard}>
               <View style={styles.inputHeader}>
                 <Text style={styles.inputLabel}>Mobile Number</Text>
-                <View style={styles.securityBadge}>
-                  <Text style={styles.securityText}>🔒 Secure</Text>
-                </View>
               </View>
               
               <View style={[
@@ -191,23 +188,6 @@ export default function RiderLogin() {
               </TouchableOpacity>
             </View>
 
-            {/* Features */}
-            <View style={styles.featuresBox}>
-              <View style={styles.featureItem}>
-                <Text style={styles.featureIcon}>⚡</Text>
-                <Text style={styles.featureText}>Instant Login</Text>
-              </View>
-              <View style={styles.featureDivider} />
-              <View style={styles.featureItem}>
-                <Text style={styles.featureIcon}>🔐</Text>
-                <Text style={styles.featureText}>100% Secure</Text>
-              </View>
-              <View style={styles.featureDivider} />
-              <View style={styles.featureItem}>
-                <Text style={styles.featureIcon}>📱</Text>
-                <Text style={styles.featureText}>WhatsApp OTP</Text>
-              </View>
-            </View>
           </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -259,7 +239,7 @@ const styles = StyleSheet.create({
     fontSize: 36,
   },
   brandTitle: {
-    fontSize: 44,
+    fontSize: 36,
     fontWeight: "900",
     color: "#10b981",
     letterSpacing: -1.5,
@@ -284,7 +264,7 @@ const styles = StyleSheet.create({
   },
   captainText: {
     color: "#10b981",
-    fontSize: 13,
+    fontSize: 8,
     fontWeight: "700",
     letterSpacing: 1,
     textTransform: "uppercase",
@@ -298,14 +278,14 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   welcomeTitle: {
-    fontSize: 30,
+    fontSize: 24,
     fontWeight: "800",
     color: "#ffffff",
     marginBottom: 4,
     letterSpacing: -0.5,
   },
   welcomeDesc: {
-    fontSize: 15,
+    fontSize: 12,
     color: "#94a3b8",
     lineHeight: 22,
   },
@@ -324,7 +304,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   inputLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
     color: "#e2e8f0",
     letterSpacing: 0.5,
@@ -357,8 +337,8 @@ const styles = StyleSheet.create({
   countryCodeBox: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 18,
+    paddingHorizontal: 10,
+    paddingVertical: 16,
     backgroundColor: "rgba(16, 185, 129, 0.08)",
     gap: 8,
   },

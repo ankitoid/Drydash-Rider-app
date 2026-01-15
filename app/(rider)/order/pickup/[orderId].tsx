@@ -304,7 +304,7 @@ export default function PickupDetails() {
           <View style={styles.iconWrap}>
             <Ionicons name="water-outline" size={24} color={theme.primary} />
           </View>
-          <Text style={[styles.itemText, { color: theme.text }]}>Drywash</Text>
+          <Text style={[styles.itemText, { color: theme.text }]}>Dry-Clean</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>

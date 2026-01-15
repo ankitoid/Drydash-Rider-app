@@ -196,18 +196,15 @@ export default function RiderOTP() {
               },
             ]}
           >
-            <View style={styles.iconWrapper}>
+            {/* <View style={styles.iconWrapper}>
               <View style={styles.iconOuter}>
                 <View style={styles.iconInner}>
                   <Text style={styles.lockIcon}>🔐</Text>
                 </View>
               </View>
-            </View>
+            </View> */}
             
             <Text style={styles.pageTitle}>Verify OTP</Text>
-            <Text style={styles.pageSubtitle}>
-              We've sent a verification code to
-            </Text>
           </Animated.View>
 
           {/* Phone Display */}
@@ -274,10 +271,10 @@ export default function RiderOTP() {
           >
             <View style={styles.otpHeader}>
               <Text style={styles.otpLabel}>Enter 6-Digit Code</Text>
-              <View style={styles.timerBadge}>
+              {/* <View style={styles.timerBadge}>
                 <Text style={styles.timerIcon}>⏱</Text>
                 <Text style={styles.timerText}>{formatTime(timer)}</Text>
-              </View>
+              </View> */}
             </View>
 
             <TextInput
@@ -387,8 +384,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 50,
-    paddingBottom: 30,
+    paddingBottom: 32,
     justifyContent: "center",
   },
   backButton: {
@@ -406,6 +402,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     color: "#10b981",
     fontWeight: "900",
+    marginBottom: 6,
   },
   headerSection: {
     alignItems: "center",
@@ -436,10 +433,10 @@ const styles = StyleSheet.create({
     fontSize: 32,
   },
   pageTitle: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: "900",
     color: "#ffffff",
-    marginBottom: 8,
+    marginBottom: 2,
     letterSpacing: -0.5,
   },
   pageSubtitle: {
@@ -530,10 +527,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 8,
   },
   otpLabel: {
-    fontSize: 14,
+    fontSize: 10,
     fontWeight: "700",
     color: "#e2e8f0",
     letterSpacing: 0.5,
@@ -556,13 +553,13 @@ const styles = StyleSheet.create({
     color: "#10b981",
   },
   otpInput: {
-    height: 70,
+    height: 52,
     backgroundColor: "rgba(15, 23, 42, 0.8)",
     borderRadius: 16,
     borderWidth: 2,
     borderColor: "rgba(16, 185, 129, 0.2)",
     color: "#ffffff",
-    fontSize: 32,
+    fontSize: 20,
     fontWeight: "800",
     textAlign: "center",
     letterSpacing: 12,
@@ -572,7 +569,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 16,
   },
   dot: {
     width: 10,
@@ -598,11 +595,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 18,
+    paddingVertical: 8,
     gap: 12,
   },
   verifyButtonText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "800",
     color: "#0a0f0d",
     letterSpacing: 0.3,
