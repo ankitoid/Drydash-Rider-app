@@ -352,21 +352,6 @@ export default function RiderOTP() {
               </Text>
             </TouchableOpacity>
           </Animated.View>
-
-          {/* Info Card */}
-          <Animated.View
-            style={[
-              styles.infoCard,
-              {
-                opacity: fadeAnim,
-              },
-            ]}
-          >
-            <Text style={styles.infoIcon}>💬</Text>
-            <Text style={styles.infoText}>
-              OTP will be sent via WhatsApp to your registered mobile number
-            </Text>
-          </Animated.View>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -384,8 +369,9 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingBottom: 32,
-    justifyContent: "center",
+    paddingVertical: 32,
+    // justifyContent: "center",
+    
   },
   backButton: {
     width: 44,

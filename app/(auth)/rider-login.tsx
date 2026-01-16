@@ -134,7 +134,7 @@ export default function RiderLogin() {
             ]}
           >
             <View style={styles.welcomeBox}>
-              <Text style={styles.welcomeTitle}>Welcome Back! 👋</Text>
+              <Text style={styles.welcomeTitle}>Welcome Back!</Text>
               <Text style={styles.welcomeDesc}>
                 Enter your mobile number to get started.
               </Text>
