@@ -1,31 +1,39 @@
 // app/(rider)/(tabs)/delivered/index.tsx
+import { useRiderData } from "@/context/RiderDataContext";
 import { useAuth } from "@/context/useAuth";
-import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Animated,
-  AppState,
   Easing,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
 /* ================= TYPES ================= */
 
-type Pickup = {
+// type Pickup = {
+//   id: string;
+//   orderId: string;
+//   phone : string,
+//   name: string;
+//   address: string;
+// };
+
+type Delivery = {
   id: string;
   orderId: string;
-  phone : string,
+  phone: string;
   name: string;
   address: string;
 };
+
 
 const API_URL = "https://api.drydash.in/api/v1";
 
@@ -36,9 +44,12 @@ export default function Pickup() {
   const { user, token } = useAuth();
 
 
-  const [loading, setLoading] = useState(true);
-  const [pickups, setPickups] = useState<Pickup[]>([]); // need to make it deleveries
-  const [refreshing, setRefreshing] = useState(false);
+const [loading, setLoading] = useState(true);
+
+// use global deliveries from RiderDataContext
+const { deliveries, setDeliveries } = useRiderData();
+
+const [refreshing, setRefreshing] = useState(false);
 
   /* page animation */
   const pageOpacity = useRef(new Animated.Value(0)).current;
@@ -47,6 +58,18 @@ export default function Pickup() {
   /* list animations */
   const itemOpacity = useRef<Animated.Value[]>([]);
   const itemTranslate = useRef<Animated.Value[]>([]);  
+
+  useEffect(() => {
+  // whenever deliveries list changes, ensure animation arrays are same length
+  itemOpacity.current = deliveries.map(
+    (_, i) => itemOpacity.current[i] || new Animated.Value(1)
+  );
+
+  itemTranslate.current = deliveries.map(
+    (_, i) => itemTranslate.current[i] || new Animated.Value(0)
+  );
+}, [deliveries.length]);
+
   const { completedOrderId } = useLocalSearchParams<{
   completedOrderId?: string;
 }>();
@@ -55,7 +78,7 @@ export default function Pickup() {
 useEffect(() => {
   if (!completedOrderId) return;
 
-  setPickups((prev) => prev.filter((p) => p.id !== completedOrderId));
+  setDeliveries((prev) => prev.filter((p) => p.id !== completedOrderId));
   router.setParams({ completedOrderId: undefined });
 }, [completedOrderId]);
   
@@ -66,7 +89,7 @@ useEffect(() => {
 
   /* ================= API ================= */
 
-  const fetchPickups = async () => {      // need to make it fetchDeleveries
+  const fetchDeliveries = async () => {      // need to make it fetchDeleveries
     if (!user?.email) return;
 
     try {
@@ -94,7 +117,7 @@ const res = await fetch(
         throw new Error(data.message || "Failed to fetch orders");
       }
 
-      const mapped: Pickup[] = data.orders.map((o: any) => ({
+      const mapped: Delivery[] = data.orders.map((o: any) => ({
         id: o._id,
         orderId: o.order_id,
         name: o.customerName,
@@ -102,7 +125,7 @@ const res = await fetch(
         address: o.address,
       }));
 
-      setPickups(mapped);
+      setDeliveries(mapped);
 
       /* prepare animations */
       itemOpacity.current = mapped.map(() => new Animated.Value(0));
@@ -142,7 +165,7 @@ const res = await fetch(
       ).start();
     } catch (err) {
       console.error("Pickup fetch error:", err);
-      setPickups([]);
+      setDeliveries([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -150,12 +173,12 @@ const res = await fetch(
   };
 
   // useEffect(() => {
-  //   fetchPickups();
+  //   fetchDeliveries();
   // }, [user?.email, router]);
 
   useFocusEffect(
   useCallback(() => {
-    fetchPickups();
+    fetchDeliveries();
   }, [user?.email])
 );
 
@@ -163,64 +186,64 @@ const res = await fetch(
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchPickups();
+    fetchDeliveries();
   };
 
 
     /* ================= SOCKET REALTIME DELIVERY ================= */
 
-  useEffect(() => {
-    const riderId = user?._id;
-    if (!riderId) return;
+  // useEffect(() => {
+  //   const riderId = user?._id;
+  //   if (!riderId) return;
 
-    // connect socket
-    socket.connect();
+  //   // connect socket
+  //   socket.connect();
 
-    // join rider room
-    socket.emit("joinRider", { riderId });
+  //   // join rider room
+  //   socket.emit("joinRider", { riderId });
 
-    // listen realtime delivery assignment
-    socket.on("assignOrder", ({ order }) => {
-      console.log("Realtime delivery assigned =>", order);
+  //   // listen realtime delivery assignment
+  //   socket.on("assignOrder", ({ order }) => {
+  //     console.log("Realtime delivery assigned =>", order);
 
-      const mapped: Pickup = {
-        id: order._id,
-        orderId: order.order_id,
-        name: order.customerName,
-        phone: order.contactNo,
-        address: order.address,
-      };
+  //     const mapped: Delivery = {
+  //       id: order._id,
+  //       orderId: order.order_id,
+  //       name: order.customerName,
+  //       phone: order.contactNo,
+  //       address: order.address,
+  //     };
 
-      setPickups((prev) => {
-        const exists = prev.some((d) => d.id === mapped.id);
-        if (exists) return prev;
+  //     setDeliveries((prev) => {
+  //       const exists = prev.some((d) => d.id === mapped.id);
+  //       if (exists) return prev;
 
-        return [mapped, ...prev];
-      });
-    });
+  //       return [mapped, ...prev];
+  //     });
+  //   });
 
-    return () => {
-      socket.off("assignOrder");
-      // ❌ do not disconnect socket here
-    };
-  }, [user?._id]);
+  //   return () => {
+  //     socket.off("assignOrder");
+  //     // ❌ do not disconnect socket here
+  //   };
+  // }, [user?._id]);
 
   /* ---------- SOCKET FOREGROUND HANDLING (OPTIONAL BUT GOOD) ---------- */
-  useEffect(() => {
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        const riderId = user?._id;
-        if (!riderId) return;
+  // useEffect(() => {
+  //   const sub = AppState.addEventListener("change", (state) => {
+  //     if (state === "active") {
+  //       const riderId = user?._id;
+  //       if (!riderId) return;
 
-        if (!socket.connected) {
-          socket.connect();
-          socket.emit("joinRider", { riderId });
-        }
-      }
-    });
+  //       if (!socket.connected) {
+  //         socket.connect();
+  //         socket.emit("joinRider", { riderId });
+  //       }
+  //     }
+  //   });
 
-    return () => sub.remove();
-  }, [user?._id]);
+  //   return () => sub.remove();
+  // }, [user?._id]);
 
   /* ================= LOADING ================= */
 
@@ -241,7 +264,7 @@ const res = await fetch(
 
   /* ================= EMPTY STATE ================= */
 
-if (!loading && pickups.length === 0) {
+if (!loading && deliveries.length === 0) {
   return (
     <View
       style={[
@@ -306,12 +329,12 @@ if (!loading && pickups.length === 0) {
         </View>
       </Animated.View>
 
-      {pickups.map((p, i) => (
+      {deliveries.map((p, i) => (
         <Animated.View
           key={p.id}
           style={{
             opacity: itemOpacity.current[i],
-            transform: [{ translateY: itemTranslate.current[i] }],
+            transform: [{ translateY: itemTranslate.current[i] || 0 }],
           }}
         >
           <TouchableOpacity

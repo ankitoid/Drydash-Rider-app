@@ -1,16 +1,15 @@
+import { useRiderData } from "@/context/RiderDataContext";
 import { useAuth } from "@/context/useAuth";
-import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
-  AppState,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -34,8 +33,10 @@ export default function Pickup() {
   }>();
 
   const [loading, setLoading] = useState(true);
-  const [pickups, setPickups] = useState<Pickup[]>([]);
+  // const [pickups, setPickups] = useState<Pickup[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+
+  const { pickups, setPickups } = useRiderData();
 
   /* ---------- FETCH PICKUPS ---------- */
   const getPickups = async () => {
@@ -82,51 +83,103 @@ export default function Pickup() {
       return;
     }, [user?.email, completedOrderId])
   );
-  /* ---------- SOCKET: CONNECT + JOIN RIDER ROOM ---------- */
-  useEffect(() => {
-    // riderId is best, fallback to email if your auth does not have _id
-    const riderId = user?._id;
+// /* ---------- SOCKET: CONNECT + JOIN RIDER ROOM ---------- */
+// console.log("this is userrrr",user)
+// useEffect(() => {
+//   const riderId = user?._id;
 
-    if (!riderId) return;
+//   console.log("🟡 [SOCKET] useEffect triggered");
+//   console.log("🟡 [SOCKET] riderId =>", riderId);
 
-    // connect
-    socket.connect();
+//   if (!riderId) {
+//     console.log("🔴 [SOCKET] riderId missing, returning...");
+//     return;
+//   }
 
-    // join room
-    socket.emit("joinRider", { riderId });
+//   console.log("🟡 [SOCKET] connecting socket...");
 
-    // listen realtime assignment
-    socket.on("riderAssignedPickup", ({ pickup }) => {
-      setPickups((prev) => {
-        const exists = prev.some((p) => p._id === pickup._id);
-        if (exists) return prev;
+//   // connect socket
+//   socket.connect();
 
-        return [pickup, ...prev];
-      });
-    });
+//   // connection logs
+//   socket.on("connect", () => {
+//     console.log("✅ [SOCKET] connected successfully");
+//     console.log("✅ [SOCKET] socket.id =>", socket.id);
 
-    return () => {
-      socket.off("riderAssignedPickup");
-      // ❌ do not disconnect here (keep socket alive)
-    };
-  }, [user?._id]);
+//     // join room
+//     console.log("🟢 [SOCKET] emitting joinRider with riderId:", riderId);
+//     socket.emit("joinRider", { riderId });
+//   });
 
-  /* ---------- SOCKET: HANDLE APP FOREGROUND ---------- */
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") {
-        const riderId = user?._id;
-        if (!riderId) return;
+//   socket.on("connect_error", (err) => {
+//     console.log("❌ [SOCKET] connect_error =>", err?.message || err);
+//   });
 
-        if (!socket.connected) {
-          socket.connect();
-          socket.emit("joinRider", { riderId });
-        }
-      }
-    });
+//   socket.on("disconnect", (reason) => {
+//     console.log("⚠️ [SOCKET] disconnected =>", reason);
+//   });
 
-    return () => subscription.remove();
-  }, [user?._id]);
+//   // listen realtime assignment
+//   socket.on("riderAssignedPickup", ({ pickup }) => {
+//     console.log("🔥 [SOCKET] riderAssignedPickup received");
+//     console.log("🔥 [SOCKET] pickup =>", pickup);
+
+//     setPickups((prev) => {
+//       const exists = prev.some((p) => p._id === pickup._id);
+//       if (exists) {
+//         console.log("🟠 [SOCKET] pickup already exists in list:", pickup._id);
+//         return prev;
+//       }
+
+//       console.log("🟢 [SOCKET] adding new pickup to list:", pickup._id);
+//       return [pickup, ...prev];
+//     });
+//   });
+
+//   return () => {
+//     console.log("🧹 [SOCKET] cleanup running (removing listeners)");
+
+//     socket.off("connect");
+//     socket.off("connect_error");
+//     socket.off("disconnect");
+//     socket.off("riderAssignedPickup");
+//   };
+// }, [user?._id]);
+
+// /* ---------- SOCKET: HANDLE APP FOREGROUND ---------- */
+// useEffect(() => {
+//   console.log("🟡 [APPSTATE] listener added");
+
+//   const subscription = AppState.addEventListener("change", (state) => {
+//     console.log("🟣 [APPSTATE] state changed =>", state);
+
+//     if (state === "active") {
+//       const riderId = user?._id;
+//       console.log("🟣 [APPSTATE] app active, riderId =>", riderId);
+
+//       if (!riderId) {
+//         console.log("🔴 [APPSTATE] riderId missing, skipping socket reconnect");
+//         return;
+//       }
+
+//       console.log("🟣 [APPSTATE] socket.connected =>", socket.connected);
+
+//       if (!socket.connected) {
+//         console.log("🟡 [APPSTATE] reconnecting socket...");
+//         socket.connect();
+
+//         console.log("🟢 [APPSTATE] emitting joinRider again:", riderId);
+//         socket.emit("joinRider", { riderId });
+//       }
+//     }
+//   });
+
+//   return () => {
+//     console.log("🧹 [APPSTATE] listener removed");
+//     subscription.remove();
+//   };
+// }, [user?._id]);
+
 
   /* ---------- LOADING ---------- */
   if (loading) {

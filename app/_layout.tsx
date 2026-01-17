@@ -7,6 +7,11 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { CartProvider } from "../context/CartContext";
 import { ThemeProvider } from "../context/ThemeContext";
 
+// ✅ NEW IMPORTS
+import { NotificationProvider } from "@/context/NotificationContext";
+import { RiderDataProvider } from "@/context/RiderDataContext";
+import { SocketProvider } from "@/context/SocketProvider";
+
 function AuthGuard() {
   const { token, isLoading } = useAuth();
 
@@ -33,8 +38,13 @@ export default function RootLayout() {
       <AuthProvider>
         <ThemeProvider>
           <CartProvider>
-            {/* ✅ AUTH-AWARE STACK */}
-            <AuthGuard />
+            <RiderDataProvider>
+            <NotificationProvider>
+              <SocketProvider>
+                <AuthGuard />
+              </SocketProvider>
+            </NotificationProvider>
+            </RiderDataProvider>
           </CartProvider>
         </ThemeProvider>
       </AuthProvider>

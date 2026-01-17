@@ -140,7 +140,7 @@ export default function RiderOTP() {
 
       await login(
         {
-          id: data.data.user._id,
+          _id: data.data.user._id,
           name: data.data.user.name,
           email: data.data.user.email,
           phone: data.data.user.phone,
