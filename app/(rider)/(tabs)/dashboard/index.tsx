@@ -16,6 +16,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  Alert,
 } from "react-native";
 import { Skeleton } from "../../../../components/ui/Skeleton";
 import { useTheme } from "../../../../context/ThemeContext";
@@ -281,6 +282,47 @@ export default function Dashboard() {
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
     .slice(0, 5);
 
+  const confirmToggle = () => {
+    if (isTracking) {
+      Alert.alert(
+        "Stop live tracking?",
+        "If you stop live tracking your real-time location will no longer be shared. Are you sure you want to stop?",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Stop",
+            style: "destructive",
+            onPress: () => {
+              try {
+                toggleTracking();
+              } catch (e) {
+                console.warn("Error stopping tracking", e);
+              }
+            },
+          },
+        ]
+      );
+    } else {
+      Alert.alert(
+        "Start live tracking?",
+        "Enable live tracking to share your real-time location with admin.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Start",
+            onPress: () => {
+              try {
+                toggleTracking();
+              } catch (e) {
+                console.warn("Error starting tracking", e);
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
+
   // Add this function to render location status
   const renderLocationStatus = () => (
     <View style={styles.locationStatusContainer}>
@@ -292,7 +334,7 @@ export default function Dashboard() {
             borderColor: theme.border,
           }
         ]}
-        onPress={toggleTracking}
+        onPress={confirmToggle}
         activeOpacity={0.8}
       >
         <View style={styles.statusIndicator}>
@@ -537,7 +579,7 @@ export default function Dashboard() {
             ]}
           >
             {/* <View
-              style={[
+              style={[ 
                 styles.pill,
                 { backgroundColor: theme.card, borderColor: theme.border },
               ]}

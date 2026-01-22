@@ -1,13 +1,11 @@
-// services/locationService.ts
 import * as Location from 'expo-location';
-import { Platform } from 'react-native';
 
 export class LocationService {
   private static instance: LocationService;
   private watchId: Location.LocationSubscription | null = null;
   private lastSentTimestamp = 0;
   private readonly UPDATE_INTERVAL = 60000; // 60 seconds
-  private readonly DISTANCE_INTERVAL = 10; // 10 meters
+  private readonly DISTANCE_INTERVAL = 10;
   private isTracking = false;
 
   static getInstance(): LocationService {
@@ -19,10 +17,12 @@ export class LocationService {
 
   async requestPermissions(): Promise<boolean> {
     try {
+      console.log('🔍 Requesting location permissions...');
       const { status } = await Location.requestForegroundPermissionsAsync();
+      console.log('✅ Permission status:', status);
       return status === 'granted';
     } catch (error) {
-      console.error('Error requesting location permissions:', error);
+      console.error('❌ Error requesting location permissions:', error);
       return false;
     }
   }
@@ -41,7 +41,7 @@ export class LocationService {
     onLocationUpdate: (location: Location.LocationObject) => void
   ): Promise<void> {
     if (this.isTracking) {
-      console.log('Location tracking already started');
+      console.log('⚠️ Location tracking already started');
       return;
     }
 
@@ -54,16 +54,17 @@ export class LocationService {
         }
       }
 
+      console.log('📍 Starting location watcher...');
       this.watchId = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.High,
+          accuracy: Location.Accuracy.Balanced,
           distanceInterval: this.DISTANCE_INTERVAL,
-          timeInterval: this.UPDATE_INTERVAL,
+          timeInterval: 1000,
         },
         (location) => {
           const now = Date.now();
-          // Ensure we send at most once per minute
           if (now - this.lastSentTimestamp >= this.UPDATE_INTERVAL) {
+            console.log('📍 Sending location update (60s interval)');
             onLocationUpdate(location);
             this.lastSentTimestamp = now;
           }
@@ -71,21 +72,23 @@ export class LocationService {
       );
 
       this.isTracking = true;
-      console.log('📍 Location tracking started (60s interval)');
+      console.log('✅ Location tracking started (60s interval)');
     } catch (error) {
-      console.error('Error starting location tracking:', error);
+      console.error('❌ Error starting location tracking:', error);
       throw error;
     }
   }
 
   async stopTracking(): Promise<void> {
+    console.log('🛑 Stopping location watcher...');
     if (this.watchId) {
       this.watchId.remove();
       this.watchId = null;
     }
 
     this.isTracking = false;
-    console.log('📍 Location tracking stopped');
+    this.lastSentTimestamp = 0;
+    console.log('✅ Location tracking stopped');
   }
 
   formatLocationForBackend(
@@ -105,7 +108,7 @@ export class LocationService {
       },
       speed: location.coords.speed ? location.coords.speed * 3.6 : 0,
       bearing: location.coords.heading || 0,
-      accuracy: location.coords.accuracy,
+      batteryLevel: 100, // You can get this from expo-battery if needed
       status,
       timestamp: new Date().toISOString(),
     };
