@@ -9,9 +9,7 @@ import { AppState } from "react-native";
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
   const { notify } = useNotification();
-
-  // ✅ NEW: global orders state
-  const { addPickupRealtime,addDeliveryRealtime} = useRiderData();
+  const { addPickupRealtime, addDeliveryRealtime } = useRiderData();
 
   useEffect(() => {
     const riderId = user?._id;
@@ -22,6 +20,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     socket.on("connect", () => {
       socket.emit("joinRider", { riderId });
       console.log("✅ [SOCKET PROVIDER] joined rider room:", riderId);
+      
+      socket.emit("joinAdmin");
     });
 
     // ✅ IMPORTANT: prevent duplicate listener
@@ -38,7 +38,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       notify({
         title: "New Pickup Assigned 🚀",
         message: `Pickup ID: WZP-${shortId}`,
-        duration: 5000, // ✅ keep 2 sec
+        duration: 5000,
       });
 
       // Sound
@@ -71,6 +71,14 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       addDeliveryRealtime(mapped);
     });
 
+    // Listen for location update acknowledgments
+    socket.on("locationUpdateAck", ({ success, message }) => {
+      if (success) {
+        console.log("📍 Location update acknowledged:", message);
+      } else {
+        console.warn("⚠️ Location update failed:", message);
+      }
+    });
 
     socket.on("disconnect", (reason) => {
       console.log("⚠️ [SOCKET PROVIDER] disconnected:", reason);
@@ -86,6 +94,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       socket.off("connect_error");
       socket.off("riderAssignedPickup");
       socket.off("assignOrder");
+      socket.off("locationUpdateAck");
     };
   }, [user?._id]);
 
@@ -99,6 +108,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         if (!socket.connected) {
           socket.connect();
           socket.emit("joinRider", { riderId });
+          socket.emit("joinAdmin");
         }
       }
     });

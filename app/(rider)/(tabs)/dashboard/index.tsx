@@ -1,5 +1,6 @@
 // app/(rider)/(tabs)/dashboard/index.tsx
 import { useAuth } from "@/context/useAuth";
+import { useLocation } from "@/context/LocationContext";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -56,6 +57,7 @@ type Order = {
 export default function Dashboard() {
   const { theme } = useTheme();
   const { user } = useAuth();
+  const { isTracking, lastLocation, toggleTracking, error: locationError } = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [pickups, setPickups] = useState<Order[]>([]);
@@ -279,6 +281,43 @@ export default function Dashboard() {
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
     .slice(0, 5);
 
+  // Add this function to render location status
+  const renderLocationStatus = () => (
+    <View style={styles.locationStatusContainer}>
+      <TouchableOpacity
+        style={[
+          styles.locationStatusBadge,
+          {
+            backgroundColor: isTracking ? '#10b981' : '#ef4444',
+            borderColor: theme.border,
+          }
+        ]}
+        onPress={toggleTracking}
+        activeOpacity={0.8}
+      >
+        <View style={styles.statusIndicator}>
+          <View style={[
+            styles.statusDot,
+            { backgroundColor: isTracking ? '#10b981' : '#ef4444' }
+          ]} />
+        </View>
+        <Text style={styles.statusText}>
+          {isTracking ? 'LIVE TRACKING' : 'OFFLINE'}
+        </Text>
+      </TouchableOpacity>
+      
+      {lastLocation && (
+        <Text style={[styles.lastUpdateText, { color: theme.subText }]}>
+          Last: {new Date(lastLocation.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+      )}
+      
+      {locationError && (
+        <Text style={styles.errorText}>⚠️ {locationError}</Text>
+      )}
+    </View>
+  );
+
   if (loading) {
     return (
       <ScrollView
@@ -336,6 +375,9 @@ export default function Dashboard() {
       }
       ListHeaderComponent={
         <>
+          {/* Location Tracking Status - Add this at the top */}
+          {renderLocationStatus()}
+
           {/* Priority Pickups */}
           <SectionHeader
             title="Pickup"
@@ -400,7 +442,7 @@ export default function Dashboard() {
                     lineHeight: 18,
                   }}
                 >
-                  You’re all caught up.
+                  You're all caught up.
                 </Text>
               </View>
             </View>
@@ -478,7 +520,7 @@ export default function Dashboard() {
                     lineHeight: 18,
                   }}
                 >
-                  You’re all caught up.
+                  You're all caught up.
                 </Text>
               </View>
             </View>
@@ -790,9 +832,67 @@ function KpiCard({
   );
 }
 
+// Add these new styles
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
+  // Location Status Styles
+  locationStatusContainer: {
+    paddingHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+  },
+
+  locationStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    minWidth: 150,
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+
+  statusIndicator: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+
+  statusText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  lastUpdateText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+
+  errorText: {
+    fontSize: 11,
+    color: '#ef4444',
+    fontWeight: '600',
+    marginTop: 2,
+  },
+
+  // Existing styles...
   topRow: {
     marginTop: 20,
     paddingHorizontal: 16,
@@ -912,5 +1012,4 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
   },
-  statusText: { fontWeight: "800", fontSize: 12 },
 });

@@ -1,8 +1,9 @@
-import { io, Socket } from "socket.io-client";
+import { io } from 'socket.io-client';
 
-const SOCKET_URL = "https://api.drydash.in";
+const SOCKET_URL = 'https://rider-app-testing.onrender.com';
 
-export const socket: Socket = io(SOCKET_URL, {
-  transports: ["websocket"],
-  autoConnect: false,
+export const socket = io(SOCKET_URL, {
+  transports: ['websocket'],
+  reconnectionAttempts: 5,
+  reconnectionDelay: 1000,
 });

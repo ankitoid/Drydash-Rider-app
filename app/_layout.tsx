@@ -1,3 +1,4 @@
+// Update app/_layout.tsx
 import { AuthProvider } from "@/context/AuthContext";
 import { useAuth } from "@/context/useAuth";
 import { router, Stack } from "expo-router";
@@ -6,11 +7,10 @@ import { ActivityIndicator, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { CartProvider } from "../context/CartContext";
 import { ThemeProvider } from "../context/ThemeContext";
-
-// ✅ NEW IMPORTS
 import { NotificationProvider } from "@/context/NotificationContext";
 import { RiderDataProvider } from "@/context/RiderDataContext";
 import { SocketProvider } from "@/context/SocketProvider";
+import { LocationProvider } from "@/context/LocationContext"; // Add this
 
 function AuthGuard() {
   const { token, isLoading } = useAuth();
@@ -39,11 +39,13 @@ export default function RootLayout() {
         <ThemeProvider>
           <CartProvider>
             <RiderDataProvider>
-            <NotificationProvider>
-              <SocketProvider>
-                <AuthGuard />
-              </SocketProvider>
-            </NotificationProvider>
+              <NotificationProvider>
+                <SocketProvider>
+                  <LocationProvider>
+                    <AuthGuard />
+                  </LocationProvider>
+                </SocketProvider>
+              </NotificationProvider>
             </RiderDataProvider>
           </CartProvider>
         </ThemeProvider>
