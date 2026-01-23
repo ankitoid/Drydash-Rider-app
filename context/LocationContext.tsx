@@ -137,16 +137,13 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     const handleAppStateChange = async (nextState: AppStateStatus) => {
       console.log('📱 App state changed:', nextState);
       
-      if (nextState === 'active' && trackingRef.current) {
-        // App came to foreground, restart tracking if it was active
+      if (nextState === 'active') {
         console.log('📱 App came to foreground, checking tracking...');
-        if (trackingRef.current) {
+        if (trackingRef.current && !locationService.isTrackingActive()) {
           await startTracking();
         }
-      } else if (nextState.match(/inactive|background/) && trackingRef.current) {
-        // App going to background, stop tracking
-        console.log('📱 App going to background, stopping tracking...');
-        await stopTracking();
+      } else {
+        console.log('📱 App going to', nextState, '- leaving tracking running as started by user.');
       }
       
       appState.current = nextState;
@@ -156,9 +153,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     return () => {
       sub.remove();
-      if (trackingRef.current) {
-        stopTracking();
-      }
     };
   }, []);
 
