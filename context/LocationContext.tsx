@@ -28,6 +28,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const { user } = useAuth();
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const trackingRef = useRef(false);
+  const lockRef = useRef(false);
 
   const [isTracking, setIsTracking] = useState(false);
   const [lastLocation, setLastLocation] = useState<Location.LocationObject | null>(null);
@@ -39,7 +40,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     console.log('📍 Checking socket and user for location update...');
     console.log('Socket connected:', socket.connected);
     console.log('User ID:', user?._id);
-    
+
     if (!socket.connected || !user?._id) {
       console.log('⚠️ Not sending update - socket or user missing');
       return;
@@ -66,12 +67,17 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const startTracking = async (): Promise<void> => {
     console.log('🚀 Starting location tracking...');
-    if (trackingRef.current) {
-      console.log('⚠️ Already tracking');
+    if (lockRef.current) {
+      console.log('⏳ startTracking blocked by lock');
       return;
     }
 
+    lockRef.current = true;
     try {
+      if (trackingRef.current) {
+        console.log('⚠️ Already tracking (trackingRef)');
+        return;
+      }
       // Request permissions first
       const hasPermission = await locationService.requestPermissions();
       if (!hasPermission) {
@@ -95,19 +101,29 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       trackingRef.current = false;
       setIsTracking(false);
       setError('Location tracking failed: ' + (err as Error).message);
+    } finally {
+      lockRef.current = false;
     }
   };
 
   const stopTracking = async (): Promise<void> => {
     console.log('🛑 Stopping location tracking...');
-    if (!trackingRef.current) return;
+    if (lockRef.current) {
+      console.log('⏳ stopTracking blocked by lock');
+      return;
+    }
 
+    lockRef.current = true;
     try {
+      if (!trackingRef.current) {
+        console.log('⚠️ Not tracking (trackingRef false)');
+        return;
+      }
       await locationService.stopTracking();
-      
+
       trackingRef.current = false;
       setIsTracking(false);
-      
+
       // Send offline status
       if (socket.connected && user?._id) {
         socket.emit('riderStatusUpdate', {
@@ -116,16 +132,22 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
           lastUpdate: new Date().toISOString(),
         });
       }
-      
+
       console.log('✅ Location tracking stopped');
     } catch (err) {
       console.error('❌ Failed to stop tracking:', err);
       setError('Failed to stop tracking');
+    } finally {
+      lockRef.current = false;
     }
   };
 
   const toggleTracking = async (): Promise<void> => {
     console.log('🔄 Toggling tracking...');
+    if (lockRef.current) {
+      console.log('⏳ toggle blocked by lock');
+      return;
+    }
     if (trackingRef.current) {
       await stopTracking();
     } else {
@@ -134,18 +156,15 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   useEffect(() => {
-    const handleAppStateChange = async (nextState: AppStateStatus) => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
       console.log('📱 App state changed:', nextState);
-      
+
       if (nextState === 'active') {
-        console.log('📱 App came to foreground, checking tracking...');
-        if (trackingRef.current && !locationService.isTrackingActive()) {
-          await startTracking();
-        }
+        console.log('📱 App came to foreground — observing only (no auto-start).');
       } else {
         console.log('📱 App going to', nextState, '- leaving tracking running as started by user.');
       }
-      
+
       appState.current = nextState;
     };
 
