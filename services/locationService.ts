@@ -1,12 +1,13 @@
-import * as Location from 'expo-location';
+import * as Location from "expo-location";
+import { LOCATION_TASK_NAME } from "./backgroundLocationTask";
 
 export class LocationService {
   private static instance: LocationService;
-  private watchId: Location.LocationSubscription | null = null;
-  private lastSentTimestamp = 0;
-  private readonly UPDATE_INTERVAL = 60000; // 60 seconds
-  private readonly DISTANCE_INTERVAL = 10;
   private isTracking = false;
+  private cachedUser: any = null;
+
+  private readonly DISTANCE_INTERVAL = 10;
+  private readonly TIME_INTERVAL = 5000;
 
   static getInstance(): LocationService {
     if (!LocationService.instance) {
@@ -15,80 +16,69 @@ export class LocationService {
     return LocationService.instance;
   }
 
+  setCachedUser(user: any) {
+    this.cachedUser = user;
+  }
+
+  getCachedUser() {
+    return this.cachedUser;
+  }
+
   async requestPermissions(): Promise<boolean> {
-    try {
-      console.log('🔍 Requesting location permissions...');
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      console.log('✅ Permission status:', status);
-      return status === 'granted';
-    } catch (error) {
-      console.error('❌ Error requesting location permissions:', error);
-      return false;
-    }
+    const fg = await Location.requestForegroundPermissionsAsync();
+    if (fg.status !== "granted") return false;
+
+    const bg = await Location.requestBackgroundPermissionsAsync();
+    return bg.status === "granted";
   }
 
-  async checkPermissions(): Promise<boolean> {
-    try {
-      const { status } = await Location.getForegroundPermissionsAsync();
-      return status === 'granted';
-    } catch (error) {
-      console.error('Error checking location permissions:', error);
-      return false;
-    }
-  }
+  async startTracking(): Promise<void> {
+    if (this.isTracking) return;
 
-  async startTracking(
-    onLocationUpdate: (location: Location.LocationObject) => void
-  ): Promise<void> {
-    if (this.isTracking) {
-      console.log('⚠️ Location tracking already started');
+    const hasStarted =
+      await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+
+    if (hasStarted) {
+      console.log("⚠️ Background tracking already running");
+      this.isTracking = true;
       return;
     }
 
-    try {
-      const hasPermission = await this.checkPermissions();
-      if (!hasPermission) {
-        const granted = await this.requestPermissions();
-        if (!granted) {
-          throw new Error('Location permission not granted');
-        }
-      }
+    console.log("📍 Starting BACKGROUND tracking...");
 
-      console.log('📍 Starting location watcher...');
-      this.watchId = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.Balanced,
-          distanceInterval: this.DISTANCE_INTERVAL,
-          timeInterval: 1000,
-        },
-        (location) => {
-          const now = Date.now();
-          if (now - this.lastSentTimestamp >= this.UPDATE_INTERVAL) {
-            console.log('📍 Sending location update (60s interval)');
-            onLocationUpdate(location);
-            this.lastSentTimestamp = now;
-          }
-        }
-      );
+    await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+      accuracy: Location.Accuracy.Highest,
+      distanceInterval: this.DISTANCE_INTERVAL,
+      timeInterval: this.TIME_INTERVAL,
+      showsBackgroundLocationIndicator: true,
+      foregroundService: {
+        notificationTitle: "DryDash is tracking your location",
+        notificationBody: "Live delivery tracking is active",
+        notificationColor: "#10b981",
+      },
+      pausesUpdatesAutomatically: false,
+    });
 
-      this.isTracking = true;
-      console.log('✅ Location tracking started (60s interval)');
-    } catch (error) {
-      console.error('❌ Error starting location tracking:', error);
-      throw error;
-    }
+    this.isTracking = true;
+    console.log("✅ Background tracking started");
   }
 
   async stopTracking(): Promise<void> {
-    console.log('🛑 Stopping location watcher...');
-    if (this.watchId) {
-      this.watchId.remove();
-      this.watchId = null;
+    console.log("🛑 Stopping BACKGROUND tracking...");
+
+    const hasStarted =
+      await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+
+    if (hasStarted) {
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
     }
 
     this.isTracking = false;
-    this.lastSentTimestamp = 0;
-    console.log('✅ Location tracking stopped');
+    console.log("✅ Background tracking stopped");
+  }
+
+  isTrackingActive(): boolean {
+    return this.isTracking;
   }
 
   formatLocationForBackend(
@@ -96,7 +86,7 @@ export class LocationService {
     riderId: string,
     riderName: string,
     riderPhone: string,
-    status: string = 'active'
+    status: string = "active",
   ) {
     return {
       riderId,
@@ -108,14 +98,10 @@ export class LocationService {
       },
       speed: location.coords.speed ? location.coords.speed * 3.6 : 0,
       bearing: location.coords.heading || 0,
-      batteryLevel: 100, // You can get this from expo-battery if needed
+      batteryLevel: 100,
       status,
       timestamp: new Date().toISOString(),
     };
-  }
-
-  isTrackingActive(): boolean {
-    return this.isTracking;
   }
 }
 
