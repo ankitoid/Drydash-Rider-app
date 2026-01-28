@@ -2,6 +2,7 @@
   "expo": {
     "name": "dry-dash-rider",
     "slug": "dry-dash-rider",
+    "owner": "shubh1515",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -62,7 +63,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "4038bb9b-a0b2-4136-a6fb-3aa836e70b9a"
+        "projectId": "0960fcad-688e-470a-84a5-4d32e824aa41"
       }
     }
   }
