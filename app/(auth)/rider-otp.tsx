@@ -16,7 +16,7 @@ import {
   View,
 } from "react-native";
 
-const API_URL = "https://api.drydash.in/api/v1/auth";
+const API_URL = "https://rider-app-testing.onrender.com/api/v1/auth";
 
 export default function RiderOTP() {
   const { phone } = useLocalSearchParams<{ phone?: string }>();

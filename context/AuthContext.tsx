@@ -12,7 +12,7 @@ import React, {
    CONFIG
 ===================================================== */
 
-const API_URL = "https://api.drydash.in/api/v1/auth"; // 🔁 change for prod
+const API_URL = "https://rider-app-testing.onrender.com/api/v1/auth"; // 🔁 change for prod
 
 const USER_KEY = "DRYDASH_RIDER_USER";
 const TOKEN_KEY = "DRYDASH_RIDER_TOKEN";

@@ -20,7 +20,7 @@ type Pickup = {
   Address: string;
 };
 
-const API_URL = "https://api.drydash.in/api/v1/rider";
+const API_URL = "https://rider-app-testing.onrender.com/api/v1/rider";
 
 /* ================= SCREEN ================= */
 

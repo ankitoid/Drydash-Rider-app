@@ -29,7 +29,7 @@ import { useAuth } from "../../../../../context/useAuth";
 import { PRODUCTS } from "@/constants/products";
 import { productImages } from "@/constants/productImages";
 
-const API_URL = "https://api.drydash.in/api/v1";
+const API_URL = "https://rider-app-testing.onrender.com/api/v1";
 
 const SERVICES = [
   { key: "laundry", label: "Laundry", icon: "shirt-outline" },
