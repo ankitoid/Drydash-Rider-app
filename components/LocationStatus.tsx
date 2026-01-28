@@ -14,18 +14,19 @@ export const LocationStatus: React.FC<LocationStatusProps> = ({ onPress }) => {
   const [isTracking, setIsTracking] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
-    // Check tracking status periodically
-    const interval = setInterval(() => {
-      const status = locationService.getTrackingStatus();
-      setIsTracking(status.isTracking);
-      if (status.lastSentTime) {
-        setLastUpdate(new Date(status.lastSentTime));
-      }
-    }, 5000);
+useEffect(() => {
+  let mounted = true;
+  const check = async () => {
+    const status = await locationService.getTrackingStatus();
+    if (!mounted) return;
+    setIsTracking(status.isTracking);
+    if (status.lastSentTime) setLastUpdate(new Date(status.lastSentTime));
+  };
 
-    return () => clearInterval(interval);
-  }, []);
+  check();
+  const interval = setInterval(check, 30000);
+  return () => { mounted = false; clearInterval(interval); };
+}, []);
 
   const getTimeAgo = () => {
     if (!lastUpdate) return 'Never';

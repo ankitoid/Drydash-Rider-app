@@ -1,5 +1,6 @@
 import { locationService } from "@/services/locationService";
 import { socket } from "@/services/socket";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import React, {
   createContext,
@@ -48,7 +49,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     try {
-      const payload = locationService.formatLocationForBackend(
+      const payload = await locationService.formatLocationForBackend(
         location,
         user._id,
         user.name || "Unknown Rider",
@@ -60,6 +61,16 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       socket.emit("riderLocationUpdate", payload);
       setLastLocation(location);
       setError(null);
+
+      try {
+        await AsyncStorage.setItem(
+          "bg_status",
+          JSON.stringify({ lastSentTime: new Date().toISOString() })
+        );
+      } catch (e) {
+        console.warn("Failed to persist bg_status", e);
+      }
+
     } catch (err) {
       console.error("❌ Failed to send location update:", err);
       setError("Failed to send location update");
@@ -83,6 +94,16 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       locationService.setCachedUser(user);
+      await AsyncStorage.setItem(
+        "bg_user",
+        JSON.stringify({
+          id: user._id,
+          name: user.name || "Unknown Rider",
+          phone: user.phone || "N/A",
+          bgToken: (user as any).bgToken || null,
+        })
+      );
+
 
       await locationService.startTracking();
 

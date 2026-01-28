@@ -27,7 +27,7 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
     socket.emit("joinRider", user._id);
   }
 
-  const payload = locationService.formatLocationForBackend(
+  const payload = await locationService.formatLocationForBackend(
     location,
     user._id,
     user.name || "Unknown Rider",
