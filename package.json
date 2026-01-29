@@ -20,6 +20,7 @@
     "axios": "^1.13.2",
     "expo": "~54.0.30",
     "expo-av": "~16.0.8",
+    "expo-battery": "^10.0.8",
     "expo-blur": "^15.0.8",
     "expo-camera": "~17.0.10",
     "expo-constants": "~18.0.12",
