@@ -1,28 +1,27 @@
 // app/(rider)/(tabs)/dashboard/index.tsx
-import { useAuth } from "@/context/useAuth";
 import { useLocation } from "@/context/LocationContext";
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
+import moment from "moment";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
-  Easing,
   FlatList,
-  Linking,
+  Image,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  Alert,
-  TextInput,
-  Modal,
-  Image,
-  ActivityIndicator,
 } from "react-native";
-import * as ImagePicker from "expo-image-picker";
-import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { Skeleton } from "../../../../components/ui/Skeleton";
 import { useTheme } from "../../../../context/ThemeContext";
 import { useFadeSlide } from "../../../../hooks/useFadeSlide";
@@ -64,6 +63,11 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [fulfilledCount, setFulfilledCount] = useState<number>(0);
+  const [deliveredCount, setDeliveredCount] = useState<number>(0);
+  const [dailyKm, setDailyKm] = useState<number>(0);
+  const [totalKm, setTotalKm] = useState<number>(0);
+
   // Modal states
   const [showTripModal, setShowTripModal] = useState(false);
   const [isStartingTrip, setIsStartingTrip] = useState(false);
@@ -72,24 +76,27 @@ export default function Dashboard() {
 
   const restoreOpenTrip = async () => {
     try {
-      if (!user?.email && !user?._id) return;
+      if (!user?._id) return;
 
-      const riderParam = user._id ? user._id : encodeURIComponent(user.email);
       const res = await fetch(
-        `${ORDERS_API_BASE}/trips?riderId=${riderParam}&page=1&pageSize=50`
+        `${ORDERS_API_BASE}/trips/active/${user._id}`
       );
       if (!res.ok) {
-        console.warn("restoreOpenTrip: failed to fetch trips", res.status);
+        console.warn("restoreOpenTrip: failed", res.status);
         return;
       }
       const json = await res.json();
-      const started = (json.trips || []).find((t: any) => t.status === "started");
-      if (started) {
-        setTripId(started._id);
-        setStartKm(started.startKm != null ? String(started.startKm) : "");
-        if (started.startImage) {
-          // create a minimal ImagePicker-like asset for preview (fileSize/width/height unknown)
-          setStartImage({ uri: started.startImage, fileSize: 0, width: 0, height: 0 } as any);
+      if (json.hasActiveTrip && json.trip) {
+        setTripId(json.trip._id);
+        setStartKm(String(json.trip.startKm));
+
+        if (json.trip.startImage) {
+          setStartImage({
+            uri: json.trip.startImage,
+            fileSize: 0,
+            width: 0,
+            height: 0,
+          } as any);
         }
       } else {
         setTripId(null);
@@ -100,6 +107,57 @@ export default function Dashboard() {
       console.warn("Error restoring open trip:", err);
     }
   };
+
+  const fetchKilometersData = useCallback(async () => {
+    try {
+      if (!user?._id) return;
+
+      const today = getLocalYYYYMMDD();
+      const dailyRes = await fetch(
+        `${ORDERS_API_BASE}/trips/daily/${user._id}?date=${today}`
+      );
+
+      if (dailyRes.ok) {
+        const dailyJson = await dailyRes.json();
+        setDailyKm(dailyJson.totalDailyDistance || 0);
+      }
+
+      const totalRes = await fetch(
+        `${ORDERS_API_BASE}/trips/custom-summary/${user._id}`
+      );
+
+      if (totalRes.ok) {
+        const totalJson = await totalRes.json();
+        setTotalKm(totalJson.userTotalKm || 0);
+      }
+    } catch (err) {
+      console.warn("Error fetching kilometers data:", err);
+    }
+  }, [user?._id]);
+
+  const getLocalYYYYMMDD = () => {
+    return moment().format("YYYY-MM-DD");
+  };
+
+  const fetchRiderTasks = useCallback(async (date?: string) => {
+    try {
+      if (!user?._id) return;
+      const d = date || getLocalYYYYMMDD();
+      const url = `${PICKUP_API_BASE}/rider-tasks/${user._id}?date=${encodeURIComponent(d)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn("fetchRiderTasks failed:", res.status);
+        return;
+      }
+      const json = await res.json();
+      const summary = json.summary || {};
+
+      setFulfilledCount(Number(summary.totalCompletedPickups ?? 0));
+      setDeliveredCount(Number(summary.totalCompletedDeliveries ?? 0));
+    } catch (err) {
+      console.warn("Error fetching rider tasks:", err);
+    }
+  }, [user?._id]);
 
   const kpi = useFadeSlide(0, 20);
 
@@ -113,8 +171,7 @@ export default function Dashboard() {
       const manipResult = await manipulateAsync(
         image.uri,
         [
-          // Resize if image is too large (max width 1200px)
-          { resize: { width: 1200 } }
+          { resize: { width: 900 } }
         ],
         {
           compress: 0.5,
@@ -122,7 +179,7 @@ export default function Dashboard() {
         }
       );
 
-      const compressedSize = (manipResult.width || 1200) * (manipResult.height || 800) * 0.5;
+      const compressedSize = (manipResult.width) * (manipResult.height || 600) * 0.5;
       const savedPercentage = originalSize
         ? Math.round(((originalSize - compressedSize) / originalSize) * 100)
         : 0;
@@ -157,17 +214,19 @@ export default function Dashboard() {
 
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.8,
+      quality: 0.4,
       cameraType: ImagePicker.CameraType.back,
       allowsEditing: false,
     });
 
     if (!res.canceled && res.assets?.length) {
-      const originalImage = res.assets[0];
+      const original = res.assets[0];
 
-      // Compress the image before setting
-      const compressedImage = await compressImage(originalImage);
-      setter(compressedImage);
+      setter(original);
+
+      compressImage(original).then((compressed) => {
+        setter(compressed);
+      });
     }
   };
 
@@ -189,7 +248,7 @@ export default function Dashboard() {
     } as any);
 
     try {
-      const res = await fetch("https://rider-app-testing.onrender.com/api/v1/trips/start", {
+      const res = await fetch(`${ORDERS_API_BASE}/trips/start`, {
         method: "POST",
         body: form,
       });
@@ -200,6 +259,7 @@ export default function Dashboard() {
         setTripId(json.trip._id);
         setShowTripModal(false);
         Alert.alert("Trip Started", "Your trip has been started successfully!");
+        fetchKilometersData();
       } else {
         Alert.alert("Error", json.message || "Failed to start trip");
       }
@@ -228,7 +288,7 @@ export default function Dashboard() {
 
     try {
       const res = await fetch(
-        `https://rider-app-testing.onrender.com/api/v1/trips/${tripId}/end`,
+        `${ORDERS_API_BASE}/trips/${tripId}/end`,
         {
           method: "PUT",
           body: form,
@@ -248,6 +308,7 @@ export default function Dashboard() {
         setStartImage(null);
         setEndImage(null);
         setShowTripModal(false);
+        fetchKilometersData();
       } else {
         Alert.alert("Error", json.message || "Failed to end trip");
       }
@@ -482,17 +543,30 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user?.email) return;
-    restoreOpenTrip();
-  }, [user?.email]);
+
+    const fetchData = async () => {
+      await Promise.all([
+        restoreOpenTrip(),
+        fetchRiderTasks(),
+        fetchKilometersData()
+      ]);
+    };
+
+    fetchData();
+  }, [user?.email, fetchRiderTasks]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await restoreOpenTrip();
+    await Promise.all([
+      restoreOpenTrip(),
+      fetchRiderTasks(),
+      fetchKilometersData()
+    ]);
     setRefreshing(false);
   };
 
   useEffect(() => {
-    return () => {};
+    return () => { };
   }, []);
 
   if (loading) {
@@ -542,8 +616,8 @@ export default function Dashboard() {
                 },
               ]}
             >
-              <KpiCard title="FULFILLED" value="--" theme={theme} />
-              <KpiCard title="DELIVERED" value="--" theme={theme} />
+              <KpiCard title="FULFILLED" value={String(fulfilledCount)} theme={theme} />
+              <KpiCard title="DELIVERED" value={String(deliveredCount)} theme={theme} />
             </Animated.View>
 
             <Animated.View
@@ -555,8 +629,8 @@ export default function Dashboard() {
                 },
               ]}
             >
-              <KpiCard title="KM TODAY" value="-- km" theme={theme} />
-              <KpiCard title="TOTAL KM" value="-- km" theme={theme} />
+              <KpiCard title="KM TODAY" value={`${dailyKm} km`} theme={theme} />
+              <KpiCard title="TOTAL KM" value={`${totalKm} km`} theme={theme} />
             </Animated.View>
 
             {/* Trip Tracker Card */}
