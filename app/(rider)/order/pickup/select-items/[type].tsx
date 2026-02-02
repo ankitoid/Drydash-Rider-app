@@ -1,5 +1,4 @@
 import UniversalLoader from "@/components/Loader/UniversalLoader";
-import { dashboardPickupRemoved } from "@/app/(rider)/(tabs)/dashboard";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -66,6 +65,10 @@ export default function SelectItems() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [audioUri, setAudioUri] = useState<string | null>(null);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
+
+  const [audioDuration, setAudioDuration] = useState<number | null>(null); // seconds
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+
   const [confirmLoading, setConfirmLoading] = useState(false);
 
   const [pickup, setPickup] = useState<any>(null); // fetched pickup details
@@ -411,7 +414,6 @@ export default function SelectItems() {
         );
       } else {
         console.log("Pickup marked complete:", completeRes);
-        dashboardPickupRemoved(orderId);
 
         try {
           const phone = currObj.contactNo ?? pickup?.Contact ?? "";
@@ -427,6 +429,7 @@ export default function SelectItems() {
       clear();
       setPhotos([]);
       setAudioUri(null);
+      setAudioDuration(null);
       setCheckoutModal(false);
       router.replace({
         pathname: "/(rider)/(tabs)/pickup",
@@ -515,32 +518,96 @@ export default function SelectItems() {
         Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
       setRecording(recording);
+      setAudioUri(null);
+      setAudioDuration(null);
+      if (sound) {
+        try {
+          await sound.unloadAsync();
+        } catch {}
+        setSound(null);
+        setIsPlaying(false);
+      }
     } catch (err) {
       console.error("Failed to start recording", err);
       Alert.alert("Error", "Could not start recording");
     }
   };
 
-  const stopRecording = async () => {
-    if (!recording) return;
-    try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setAudioUri(uri || null);
-      setRecording(null);
-    } catch (err) {
-      console.error("Failed to stop recording", err);
-    }
-  };
+const stopRecording = async () => {
+  if (!recording) return;
+  try {
+    await recording.stopAndUnloadAsync();
+    const uri = recording.getURI();
+    setRecording(null);
 
-  const playAudio = async () => {
-    if (!audioUri) return;
+    if (uri) {
+      setAudioUri(uri);
+      try {
+        const { sound: tmpSound, status } = await Audio.Sound.createAsync(
+          { uri },
+          { shouldPlay: false }
+        );
+        const durMs = typeof (status as any).durationMillis === "number" ? (status as any).durationMillis : 0;
+        setAudioDuration(Math.round(durMs / 1000));
+        await tmpSound.unloadAsync();
+      } catch (e) {
+        console.warn("Failed to read audio duration", e);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to stop recording", err);
+  }
+};
+
+const playAudio = async () => {
+  if (!audioUri) return;
+  try {
+    if (!sound) {
+      const { sound: s } = await Audio.Sound.createAsync(
+        { uri: audioUri },
+        { shouldPlay: true }
+      );
+      setSound(s);
+      setIsPlaying(true);
+
+      s.setOnPlaybackStatusUpdate((status) => {
+        if (!status) return;
+        if (!("isLoaded" in status) || !(status as any).isLoaded) {
+          return;
+        }
+        const loaded = status as any;
+        setIsPlaying(Boolean(loaded.isPlaying));
+        if (loaded.didJustFinish) {
+          s.unloadAsync().catch(() => {});
+          setSound(null);
+          setIsPlaying(false);
+        }
+      });
+    } else {
+      const status = await sound.getStatusAsync();
+      if ("isPlaying" in status && status.isPlaying) {
+        await sound.pauseAsync();
+        setIsPlaying(false);
+      } else {
+        await sound.playAsync();
+        setIsPlaying(true);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to play/pause audio", err);
+    Alert.alert("Playback error", "Unable to play the recorded message.");
+  }
+};
+
+  const removeAudio = async () => {
+    setAudioUri(null);
+    setAudioDuration(null);
     try {
-      const { sound } = await Audio.Sound.createAsync({ uri: audioUri });
-      setSound(sound);
-      await sound.playAsync();
-    } catch (err) {
-      console.error("Failed to play audio", err);
+      if (sound) {
+        await sound.unloadAsync();
+        setSound(null);
+      }
+    } catch (e) {
     }
   };
 
@@ -928,31 +995,59 @@ export default function SelectItems() {
                 </ScrollView>
               )}
 
-              {/* AUDIO */}
               <Text style={[styles.audioLabel, { color: theme.text }]}>
                 Voice Instructions
               </Text>
 
-              <TouchableOpacity
-                onPress={recording ? stopRecording : startRecording}
-                style={[
-                  styles.audioBtn,
-                  { backgroundColor: recording ? "#EF4444" : "#10B981" },
-                ]}
-              >
-                <Text style={styles.primaryBtnText}>
-                  {recording ? "⏹ Stop Recording" : "🎤 Record Audio"}
-                </Text>
-              </TouchableOpacity>
-
-              {audioUri && (
+              <View style={styles.audioControlContainer}>
                 <TouchableOpacity
-                  onPress={playAudio}
-                  style={[styles.audioBtn, { backgroundColor: "#3B82F6" }]}
+                  onPress={recording ? stopRecording : startRecording}
+                  style={[
+                    styles.recordButton,
+                    { backgroundColor: recording ? "#EF4444" : theme.primary },
+                  ]}
                 >
-                  <Text style={styles.primaryBtnText}>▶ Play Audio</Text>
+                  <Ionicons
+                    name={recording ? "square" : "mic"}
+                    size={20}
+                    color="#fff"
+                  />
                 </TouchableOpacity>
-              )}
+
+                <View style={styles.audioInfo}>
+                  <TouchableOpacity
+                    onPress={playAudio}
+                    disabled={!audioUri}
+                    style={[
+                      styles.playButton,
+                      {
+                        backgroundColor: audioUri ? "#111827" : "#E5E7EB",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={isPlaying ? "pause" : "play"}
+                      size={18}
+                      color={audioUri ? "#fff" : "#9CA3AF"}
+                    />
+                  </TouchableOpacity>
+
+                  <Text style={[styles.audioDurationText, { color: theme.subText }]}>
+                    {audioDuration != null ? `${audioDuration}s` : audioUri ? "…" : "No recording"}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={removeAudio}
+                  disabled={!audioUri}
+                  style={[
+                    styles.audioTrash,
+                    { opacity: audioUri ? 1 : 0.4 },
+                  ]}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
 
               {/* ACTIONS */}
               <View style={styles.modalActions}>
@@ -961,6 +1056,7 @@ export default function SelectItems() {
                     setCheckoutModal(false);
                     setPhotos([]);
                     setAudioUri(null);
+                    setAudioDuration(null);
                   }}
                   style={[styles.modalBtn, styles.secondaryBtn]}
                 >
@@ -1246,11 +1342,48 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  audioBtn: {
-    paddingVertical: 12,
+  audioControlContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    gap: 12,
+  },
+  recordButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+  },
+  audioInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  playButton: {
+    width: 44,
+    height: 44,
     borderRadius: 10,
     alignItems: "center",
-    marginTop: 8,
+    justifyContent: "center",
+    elevation: 2,
+  },
+  audioDurationText: {
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  audioTrash: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   modalActions: {

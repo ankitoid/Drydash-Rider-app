@@ -1,3 +1,4 @@
+// services/notifications.ts
 import * as Notifications from "expo-notifications";
 
 // ✅ Show notifications even when app is foreground
