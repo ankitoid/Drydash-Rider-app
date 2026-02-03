@@ -22,11 +22,14 @@ import { Skeleton } from "../../../../components/ui/Skeleton";
 import { useTheme } from "../../../../context/ThemeContext";
 import { useFadeSlide } from "../../../../hooks/useFadeSlide";
 
-export const DashboardPickupListeners = new Set<(id: string) => void>();
+// NOTE: The pickup & delivery RELATED CODE has been commented out per request.
+// If you want to re-enable it later, remove the surrounding comments.
 
-export const dashboardPickupRemoved = (id: string) => {
-  DashboardPickupListeners.forEach((fn) => fn(id));
-};
+// export const DashboardPickupListeners = new Set<(id: string) => void>();
+
+// export const dashboardPickupRemoved = (id: string) => {
+//   DashboardPickupListeners.forEach((fn) => fn(id));
+// };
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width - 48;
@@ -60,227 +63,229 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { isTracking, lastLocation, toggleTracking, error: locationError } = useLocation();
 
-  const [loading, setLoading] = useState(true);
-  const [pickups, setPickups] = useState<Order[]>([]);
-  const [deliveries, setDeliveries] = useState<Order[]>([]);
+  // const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  // const [pickups, setPickups] = useState<Order[]>([]);
+  // const [deliveries, setDeliveries] = useState<Order[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   // animate KPI and header
   const kpi = useFadeSlide(0, 20);
 
   // animation refs keyed by order id (works for both pickups + deliveries)
-  const itemOpacities = useRef<Record<string, Animated.Value>>({}).current;
-  const itemTranslates = useRef<Record<string, Animated.Value>>({}).current;
+  // const itemOpacities = useRef<Record<string, Animated.Value>>({}).current;
+  // const itemTranslates = useRef<Record<string, Animated.Value>>({}).current;
 
   /* ---------- mapping helpers ---------- */
 
-  const mapPickupToOrder = (p: any): Order => {
-    let priority = 4;
-    if (p.type === "live") priority = 10;
-    else if (p.PickupStatus === "assigned") priority = 9;
-    else if (p.isRescheduled) priority = 6;
+  // const mapPickupToOrder = (p: any): Order => {
+  //   let priority = 4;
+  //   if (p.type === "live") priority = 10;
+  //   else if (p.PickupStatus === "assigned") priority = 9;
+  //   else if (p.isRescheduled) priority = 6;
+  //
+  //   const status =
+  //     p.PickupStatus === "completed"
+  //       ? "Delivered"
+  //       : p.PickupStatus === "assigned"
+  //       ? "Active"
+  //       : "Pending";
+  //
+  //   return {
+  //     id: p._id,
+  //     kind: "pickup",
+  //     priority,
+  //     time: "Today",
+  //     status,
+  //     name: p.Name || "Customer",
+  //     address: p.Address || p.plantName || "Address not available",
+  //     contact: p.Contact || "N/A",
+  //   };
+  // };
 
-    const status =
-      p.PickupStatus === "completed"
-        ? "Delivered"
-        : p.PickupStatus === "assigned"
-        ? "Active"
-        : "Pending";
-
-    return {
-      id: p._id,
-      kind: "pickup",
-      priority,
-      time: "Today",
-      status,
-      name: p.Name || "Customer",
-      address: p.Address || p.plantName || "Address not available",
-      contact: p.Contact || "N/A",
-    };
-  };
-
-  const mapOrderToDelivery = (o: any): Order => {
-    const status =
-      o.status && o.status.includes("assigned")
-        ? "Active"
-        : o.status === "delivered"
-        ? "Delivered"
-        : "Pending";
-    return {
-      id: o._id,
-      kind: "delivery",
-      priority: 7,
-      time: o.createdAt ? new Date(o.createdAt).toLocaleString() : "Today",
-      status,
-      to: o.customerName || "Customer",
-      from: o.order_id,
-      contact: o.contactNo || "N/A",
-      address: o.address || "Address not available",
-      lat: o.orderLocation?.latitude ?? null,
-      lng: o.orderLocation?.longitude ?? null,
-      price: o.price ? `₹${o.price}` : undefined,
-    };
-  };
+  // const mapOrderToDelivery = (o: any): Order => {
+  //   const status =
+  //     o.status && o.status.includes("assigned")
+  //       ? "Active"
+  //       : o.status === "delivered"
+  //       ? "Delivered"
+  //       : "Pending";
+  //   return {
+  //     id: o._id,
+  //     kind: "delivery",
+  //     priority: 7,
+  //     time: o.createdAt ? new Date(o.createdAt).toLocaleString() : "Today",
+  //     status,
+  //     to: o.customerName || "Customer",
+  //     from: o.order_id,
+  //     contact: o.contactNo || "N/A",
+  //     address: o.address || "Address not available",
+  //     lat: o.orderLocation?.latitude ?? null,
+  //     lng: o.orderLocation?.longitude ?? null,
+  //     price: o.price ? `₹${o.price}` : undefined,
+  //   };
+  // };
 
   /* ---------- fetch functions ---------- */
 
-  const getPickups = async () => {
-    if (!user?.email) {
-      setPickups([]);
-      return;
-    }
+  // const getPickups = async () => {
+  //   if (!user?.email) {
+  //     setPickups([]);
+  //     return;
+  //   }
+  //
+  //   try {
+  //     const res = await fetch(
+  //       `${PICKUP_API_BASE}/getriderpickups?email=${encodeURIComponent(
+  //         user.email
+  //       )}`,
+  //       {
+  //         method: "GET",
+  //         headers: {
+  //           "Content-Type": "application/json",
+  //           "x-client-type": "mobile",
+  //         },
+  //       }
+  //     );
+  //
+  //     const json = await res.json();
+  //     if (!res.ok) {
+  //       console.warn("Pickups API non-ok:", json);
+  //       setPickups([]);
+  //       return;
+  //     }
+  //
+  //     const raw = Array.isArray(json.Pickups) ? json.Pickups : [];
+  //     const mapped = raw.map(mapPickupToOrder);
+  //
+  //     // keep only top 5 by priority
+  //     const sorted = mapped.sort((a: any, b: any) => b.priority - a.priority);
+  //     const top = sorted.slice(0, 5);
+  //
+  //     // init animation refs for pickups
+  //     top.forEach((o: any) => {
+  //       if (!itemOpacities[o.id]) itemOpacities[o.id] = new Animated.Value(0);
+  //       if (!itemTranslates[o.id])
+  //         itemTranslates[o.id] = new Animated.Value(18);
+  //     });
+  //
+  //     // animate pickups in
+  //     Animated.stagger(
+  //       60,
+  //       top.map((o: any) =>
+  //         Animated.parallel([
+  //           Animated.timing(itemOpacities[o.id], {
+  //             toValue: 1,
+  //             duration: 360,
+  //             easing: Easing.out(Easing.cubic),
+  //             useNativeDriver: true,
+  //           }),
+  //           Animated.timing(itemTranslates[o.id], {
+  //             toValue: 0,
+  //             duration: 400,
+  //             easing: Easing.out(Easing.cubic),
+  //             useNativeDriver: true,
+  //           }),
+  //         ])
+  //       )
+  //     ).start();
+  //
+  //     setPickups(top);
+  //   } catch (err) {
+  //     console.error("getPickups error:", err);
+  //     setPickups([]);
+  //   }
+  // };
 
-    try {
-      const res = await fetch(
-        `${PICKUP_API_BASE}/getriderpickups?email=${encodeURIComponent(
-          user.email
-        )}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "x-client-type": "mobile",
-          },
-        }
-      );
-
-      const json = await res.json();
-      if (!res.ok) {
-        console.warn("Pickups API non-ok:", json);
-        setPickups([]);
-        return;
-      }
-
-      const raw = Array.isArray(json.Pickups) ? json.Pickups : [];
-      const mapped = raw.map(mapPickupToOrder);
-
-      // keep only top 5 by priority
-      const sorted = mapped.sort((a: any, b: any) => b.priority - a.priority);
-      const top = sorted.slice(0, 5);
-
-      // init animation refs for pickups
-      top.forEach((o: any) => {
-        if (!itemOpacities[o.id]) itemOpacities[o.id] = new Animated.Value(0);
-        if (!itemTranslates[o.id])
-          itemTranslates[o.id] = new Animated.Value(18);
-      });
-
-      // animate pickups in
-      Animated.stagger(
-        60,
-        top.map((o: any) =>
-          Animated.parallel([
-            Animated.timing(itemOpacities[o.id], {
-              toValue: 1,
-              duration: 360,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-            Animated.timing(itemTranslates[o.id], {
-              toValue: 0,
-              duration: 400,
-              easing: Easing.out(Easing.cubic),
-              useNativeDriver: true,
-            }),
-          ])
-        )
-      ).start();
-
-      setPickups(top);
-    } catch (err) {
-      console.error("getPickups error:", err);
-      setPickups([]);
-    }
-  };
-
-  const fetchDeliveries = async () => {
-    if (!user?.email) {
-      setDeliveries([]);
-      return;
-    }
-
-    try {
-      const res = await fetch(
-        `${ORDERS_API_BASE}/getOrdersByFilter?email=${encodeURIComponent(
-          user.email
-        )}&status=delivery+rider+assigned&limit=1000&page=1`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "x-client-type": "mobile",
-          },
-        }
-      );
-
-      const json = await res.json();
-      if (!res.ok) {
-        console.warn("Deliveries API non-ok:", json);
-        setDeliveries([]);
-        return;
-      }
-
-      const raw = Array.isArray(json.orders) ? json.orders : [];
-      const mapped = raw.map(mapOrderToDelivery);
-
-      // init animation refs for deliveries
-      mapped.forEach((o: any) => {
-        if (!itemOpacities[o.id]) itemOpacities[o.id] = new Animated.Value(1); // visible (we'll animate with page)
-        if (!itemTranslates[o.id]) itemTranslates[o.id] = new Animated.Value(0);
-      });
-
-      setDeliveries(mapped);
-    } catch (err) {
-      console.error("fetchDeliveries error:", err);
-      setDeliveries([]);
-    }
-  };
+  // const fetchDeliveries = async () => {
+  //   if (!user?.email) {
+  //     setDeliveries([]);
+  //     return;
+  //   }
+  //
+  //   try {
+  //     const res = await fetch(
+  //       `${ORDERS_API_BASE}/getOrdersByFilter?email=${encodeURIComponent(
+  //         user.email
+  //       )}&status=delivery+rider+assigned&limit=1000&page=1`,
+  //       {
+  //         method: "GET",
+  //         headers: {
+  //           "Content-Type": "application/json",
+  //           "x-client-type": "mobile",
+  //         },
+  //       }
+  //     );
+  //
+  //     const json = await res.json();
+  //     if (!res.ok) {
+  //       console.warn("Deliveries API non-ok:", json);
+  //       setDeliveries([]);
+  //       return;
+  //     }
+  //
+  //     const raw = Array.isArray(json.orders) ? json.orders : [];
+  //     const mapped = raw.map(mapOrderToDelivery);
+  //
+  //     // init animation refs for deliveries
+  //     mapped.forEach((o: any) => {
+  //       if (!itemOpacities[o.id]) itemOpacities[o.id] = new Animated.Value(1); // visible (we'll animate with page)
+  //       if (!itemTranslates[o.id]) itemTranslates[o.id] = new Animated.Value(0);
+  //     });
+  //
+  //     setDeliveries(mapped);
+  //   } catch (err) {
+  //     console.error("fetchDeliveries error:", err);
+  //     setDeliveries([]);
+  //   }
+  // };
 
   /* ---------- combined loader + effect ---------- */
 
-  const loadAll = async () => {
-    setLoading(true);
-    try {
-      await Promise.all([getPickups(), fetchDeliveries()]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  // const loadAll = async () => {
+  //   setLoading(true);
+  //   try {
+  //     await Promise.all([getPickups(), fetchDeliveries()]);
+  //   } finally {
+  //     setLoading(false);
+  //     setRefreshing(false);
+  //   }
+  // };
 
   useEffect(() => {
     if (!user?.email) return;
-    loadAll();
+    // loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.email]);
 
   // listen for completed pickup (instant removal)
   useEffect(() => {
-    const handler = (id: string) => {
-      setPickups((prev) => prev.filter((p) => p.id !== id));
-    };
+    // const handler = (id: string) => {
+    //   setPickups((prev) => prev.filter((p) => p.id !== id));
+    // };
 
-    DashboardPickupListeners.add(handler);
+    // DashboardPickupListeners.add(handler);
 
     return () => {
-      DashboardPickupListeners.delete(handler);
+      // DashboardPickupListeners.delete(handler);
     };
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadAll();
+    // loadAll();
+    setRefreshing(false);
   };
 
   /* ---------- render helpers ---------- */
 
-  const upcomingPickups = pickups
-    .slice()
-    .sort((a, b) => b.priority - a.priority);
-  const upcomingDeliveries = deliveries
-    .slice()
-    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
-    .slice(0, 5);
+  // const upcomingPickups = pickups
+  //   .slice()
+  //   .sort((a, b) => b.priority - a.priority);
+  // const upcomingDeliveries = deliveries
+  //   .slice()
+  //   .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+  //   .slice(0, 5);
 
   const confirmToggle = () => {
     if (isTracking) {
@@ -417,10 +422,11 @@ export default function Dashboard() {
       }
       ListHeaderComponent={
         <>
-          {/* Location Tracking Status - Add this at the top */}
+          {/* Location Tracking Status - kept */}
           {renderLocationStatus()}
 
-          {/* Priority Pickups */}
+          {/* Priority Pickups - COMMENTED OUT */}
+          {/*
           <SectionHeader
             title="Pickup"
             subtitle={
@@ -489,8 +495,10 @@ export default function Dashboard() {
               </View>
             </View>
           )}
+          */}
 
-          {/* Priority Deliveries */}
+          {/* Priority Deliveries - COMMENTED OUT */}
+          {/*
           <SectionHeader
             title="Delivery"
             subtitle={
@@ -567,6 +575,7 @@ export default function Dashboard() {
               </View>
             </View>
           )}
+          */}
 
           {/* Top Row (wallet + rating) */}
           <Animated.View
@@ -584,15 +593,15 @@ export default function Dashboard() {
                 { backgroundColor: theme.card, borderColor: theme.border },
               ]}
             >
-              <Text style={[styles.pillTitle, { color: theme.subText }]}>
+              <Text style={[styles.pillTitle, { color: theme.subText }]}> 
                 WALLET
               </Text>
-              <Text style={[styles.pillValue, { color: theme.text }]}>
+              <Text style={[styles.pillValue, { color: theme.text }]}> 
                 ₹ -- --
               </Text>
             </View> */}
 
-            {/* <View style={[styles.ratingBox, { backgroundColor: theme.card }]}>
+            {/* <View style={[styles.ratingBox, { backgroundColor: theme.card }]}> 
               <Ionicons name="star" size={12} color="#FACC15" />
               <Text style={[styles.ratingText, { color: theme.text }]}>--</Text>
             </View> */}
@@ -608,8 +617,8 @@ export default function Dashboard() {
               },
             ]}
           >
-            <KpiCard title="TODAY ORDERS" value="-" theme={theme} />
-            <KpiCard title="TOTAL ORDERS" value="--" theme={theme} />
+            <KpiCard title="FULFILLED" value="--" theme={theme} />
+            <KpiCard title="DELIVERED" value="--" theme={theme} />
           </Animated.View>
 
           <Animated.View
@@ -633,224 +642,224 @@ export default function Dashboard() {
 
 /* ---------- small components ---------- */
 
-function SectionHeader({
-  title,
-  subtitle,
-}: {
-  title: string;
-  subtitle?: string;
-}) {
-  const { theme } = useTheme();
-  return (
-    <View
-      style={{
-        paddingHorizontal: 16,
-        marginTop: 18,
-        marginBottom: 6,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 16,
-          fontWeight: "800",
-          color: theme.text,
-        }}
-      >
-        {title}
-      </Text>
-      {subtitle ? (
-        <Text style={{ fontSize: 13, color: "#94A3B8", fontWeight: "700" }}>
-          {subtitle}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
+// function SectionHeader({
+//   title,
+//   subtitle,
+// }: {
+//   title: string;
+//   subtitle?: string;
+// }) {
+//   const { theme } = useTheme();
+//   return (
+//     <View
+//       style={{
+//         paddingHorizontal: 16,
+//         marginTop: 18,
+//         marginBottom: 6,
+//         flexDirection: "row",
+//         justifyContent: "space-between",
+//         alignItems: "center",
+//       }}
+//     >
+//       <Text
+//         style={{
+//           fontSize: 16,
+//           fontWeight: "800",
+//           color: theme.text,
+//         }}
+//       >
+//         {title}
+//       </Text>
+//       {subtitle ? (
+//         <Text style={{ fontSize: 13, color: "#94A3B8", fontWeight: "700" }}>
+//           {subtitle}
+//         </Text>
+//       ) : null}
+//     </View>
+//   );
+// }
 
 /* ---------- Upcoming pickup card ---------- */
-function UpcomingCard({
-  order,
-  theme,
-  onPress,
-}: {
-  order: Order;
-  theme: any;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={onPress}
-      style={[
-        styles.upcomingCard,
-        {
-          width: H_CARD,
-          backgroundColor: theme.card,
-          borderColor: theme.border,
-        },
-      ]}
-    >
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: "900", fontSize: 16, color: theme.text }}>
-            {order.name}
-          </Text>
+// function UpcomingCard({
+//   order,
+//   theme,
+//   onPress,
+// }: {
+//   order: Order;
+//   theme: any;
+//   onPress: () => void;
+// }) {
+//   return (
+//     <TouchableOpacity
+//       activeOpacity={0.9}
+//       onPress={onPress}
+//       style={[
+//         styles.upcomingCard,
+//         {
+//           width: H_CARD,
+//           backgroundColor: theme.card,
+//           borderColor: theme.border,
+//         },
+//       ]}
+//     >
+//       <View
+//         style={{
+//           flexDirection: "row",
+//           justifyContent: "space-between",
+//           alignItems: "flex-start",
+//         }}
+//       >
+//         <View style={{ flex: 1 }}>
+//           <Text style={{ fontWeight: "900", fontSize: 16, color: theme.text }}>
+//             {order.name}
+//           </Text>
 
-          <Text
-            style={{ marginTop: 8, fontWeight: "700", color: theme.primary }}
-          >
-            {order.contact}
-          </Text>
+//           <Text
+//             style={{ marginTop: 8, fontWeight: "700", color: theme.primary }}
+//           >
+//             {order.contact}
+//           </Text>
 
-          <View style={{ flexDirection: "row", marginTop: 8 }}>
-            <Ionicons
-              name="location-outline"
-              size={14}
-              color={theme.subText}
-              style={{ marginTop: 2, marginRight: 8 }}
-            />
-            <Text
-              style={{ color: theme.subText, fontSize: 13, lineHeight: 18 }}
-              numberOfLines={3}
-            >
-              {order.address}
-            </Text>
-          </View>
-        </View>
+//           <View style={{ flexDirection: "row", marginTop: 8 }}>
+//             <Ionicons
+//               name="location-outline"
+//               size={14}
+//               color={theme.subText}
+//               style={{ marginTop: 2, marginRight: 8 }}
+//             />
+//             <Text
+//               style={{ color: theme.subText, fontSize: 13, lineHeight: 18 }}
+//               numberOfLines={3}
+//             >
+//               {order.address}
+//             </Text>
+//           </View>
+//         </View>
 
-        <View style={{ marginLeft: 12 }}>
-          <View
-            style={{
-              backgroundColor: "#ECFDF5",
-              paddingHorizontal: 10,
-              paddingVertical: 6,
-              borderRadius: 999,
-            }}
-          >
-            <Text style={{ color: "#166534", fontWeight: "800" }}>
-              {order.status.toUpperCase()}
-            </Text>
-          </View>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
+//         <View style={{ marginLeft: 12 }}>
+//           <View
+//             style={{
+//               backgroundColor: "#ECFDF5",
+//               paddingHorizontal: 10,
+//               paddingVertical: 6,
+//               borderRadius: 999,
+//             }}
+//           >
+//             <Text style={{ color: "#166534", fontWeight: "800" }}>
+//               {order.status.toUpperCase()}
+//             </Text>
+//           </View>
+//         </View>
+//       </View>
+//     </TouchableOpacity>
+//   );
+// }
 
 /* ---------- Delivery card (with location button) ---------- */
-function DeliveryCard({
-  order,
-  theme,
-  onPress,
-  onOpenMap,
-}: {
-  order: Order;
-  theme: any;
-  onPress: () => void;
-  onOpenMap: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.9}
-      onPress={onPress}
-      style={[
-        styles.upcomingCard,
-        {
-          width: H_CARD,
-          backgroundColor: theme.card,
-          borderColor: theme.border,
-        },
-      ]}
-    >
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: "900", fontSize: 16, color: theme.text }}>
-            {order.to || "Customer"}
-          </Text>
+// function DeliveryCard({
+//   order,
+//   theme,
+//   onPress,
+//   onOpenMap,
+// }: {
+//   order: Order;
+//   theme: any;
+//   onPress: () => void;
+//   onOpenMap: () => void;
+// }) {
+//   return (
+//     <TouchableOpacity
+//       activeOpacity={0.9}
+//       onPress={onPress}
+//       style={[
+//         styles.upcomingCard,
+//         {
+//           width: H_CARD,
+//           backgroundColor: theme.card,
+//           borderColor: theme.border,
+//         },
+//       ]}
+//     >
+//       <View
+//         style={{
+//           flexDirection: "row",
+//           justifyContent: "space-between",
+//           alignItems: "flex-start",
+//         }}
+//       >
+//         <View style={{ flex: 1 }}>
+//           <Text style={{ fontWeight: "900", fontSize: 16, color: theme.text }}>
+//             {order.to || "Customer"}
+//           </Text>
 
-          {order.contact ? (
-            <Text
-              style={{ marginTop: 8, fontWeight: "700", color: theme.primary }}
-            >
-              {order.contact}
-            </Text>
-          ) : null}
+//           {order.contact ? (
+//             <Text
+//               style={{ marginTop: 8, fontWeight: "700", color: theme.primary }}
+//             >
+//               {order.contact}
+//             </Text>
+//           ) : null}
 
-          <View style={{ flexDirection: "row", marginTop: 8 }}>
-            <Ionicons
-              name="location-outline"
-              size={14}
-              color={theme.subText}
-              style={{ marginTop: 2, marginRight: 8 }}
-            />
-            <Text
-              style={{ color: theme.subText, fontSize: 13, lineHeight: 18 }}
-              numberOfLines={3}
-            >
-              {order.address}
-            </Text>
-          </View>
-        </View>
+//           <View style={{ flexDirection: "row", marginTop: 8 }}>
+//             <Ionicons
+//               name="location-outline"
+//               size={14}
+//               color={theme.subText}
+//               style={{ marginTop: 2, marginRight: 8 }}
+//             />
+//             <Text
+//               style={{ color: theme.subText, fontSize: 13, lineHeight: 18 }}
+//               numberOfLines={3}
+//             >
+//               {order.address}
+//             </Text>
+//           </View>
+//         </View>
 
-        <View style={{ justifyContent: "center", alignItems: "center" }}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            onPress={onOpenMap}
-            style={{ padding: 8 }}
-          >
-            <Ionicons name="location" size={22} color={theme.primary} />
-          </TouchableOpacity>
+//         <View style={{ justifyContent: "center", alignItems: "center" }}>
+//           <TouchableOpacity
+//             activeOpacity={0.7}
+//             onPress={onOpenMap}
+//             style={{ padding: 8 }}
+//           >
+//             <Ionicons name="location" size={22} color={theme.primary} />
+//           </TouchableOpacity>
 
-          <View
-            style={{
-              marginTop: 8,
-              backgroundColor: "#F0FDF4",
-              paddingHorizontal: 8,
-              paddingVertical: 6,
-              borderRadius: 999,
-            }}
-          >
-            <Text style={{ color: "#166534", fontWeight: "800" }}>
-              {order.status}
-            </Text>
-          </View>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
+//           <View
+//             style={{
+//               marginTop: 8,
+//               backgroundColor: "#F0FDF4",
+//               paddingHorizontal: 8,
+//               paddingVertical: 6,
+//               borderRadius: 999,
+//             }}
+//           >
+//             <Text style={{ color: "#166534", fontWeight: "800" }}>
+//               {order.status}
+//             </Text>
+//           </View>
+//         </View>
+//       </View>
+//     </TouchableOpacity>
+//   );
+// }
 
-function EmptyMini({ label }: { label: string }) {
-  return (
-    <View style={{ paddingHorizontal: 16 }}>
-      <View
-        style={{
-          padding: 12,
-          borderRadius: 12,
-          backgroundColor: "#0F172A10",
-          marginBottom: 6,
-        }}
-      >
-        <Text style={{ color: "#64748B" }}>{label}</Text>
-      </View>
-    </View>
-  );
-}
+// function EmptyMini({ label }: { label: string }) {
+//   return (
+//     <View style={{ paddingHorizontal: 16 }}>
+//       <View
+//         style={{
+//           padding: 12,
+//           borderRadius: 12,
+//           backgroundColor: "#0F172A10",
+//           marginBottom: 6,
+//         }}
+//       >
+//         <Text style={{ color: "#64748B" }}>{label}</Text>
+//       </View>
+//     </View>
+//   );
+// }
 
 function KpiCard({
   title,
