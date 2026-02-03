@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
   Pressable,
+  Platform,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -25,6 +26,8 @@ export default function PickupDetails() {
     Name: string;
     Address: string;
     Contact: string;
+    latitude?: number;
+    longitude?: number;
   }>({
     Name: "",
     Address: "",
@@ -119,6 +122,52 @@ export default function PickupDetails() {
     Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`);
   };
 
+  const handleNavigate = async () => {
+    if (!pickup) {
+      Alert.alert("Navigation error", "Pickup data not loaded yet.");
+      return;
+    }
+
+    const lat = (pickup as any)?.latitude;
+    const lng = (pickup as any)?.longitude;
+
+    let nativeUrl = "";
+    let webUrl = "";
+
+    if (lat && lng) {
+      nativeUrl =
+        Platform.OS === "ios"
+          ? `maps://?daddr=${lat},${lng}`
+          : `google.navigation:q=${lat},${lng}`;
+      webUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    } else if (pickup.Address) {
+      const q = encodeURIComponent(pickup.Address);
+
+      nativeUrl = `https://www.google.com/maps/search/?api=1&query=${q}`;
+      webUrl = nativeUrl;
+    } else {
+      Alert.alert("Navigation unavailable", "No address or coordinates available.");
+      return;
+    }
+
+    try {
+      const canOpen = await Linking.canOpenURL(nativeUrl);
+      if (canOpen) {
+        await Linking.openURL(nativeUrl);
+      } else {
+
+        await Linking.openURL(webUrl);
+      }
+    } catch (err) {
+      console.error("Failed to open maps", err);
+      try {
+        await Linking.openURL(webUrl);
+      } catch (e) {
+        Alert.alert("Navigation error", "Unable to open maps app or web fallback.");
+      }
+    }
+  };
+
   console.log("data:", pickup);
 
   /* ---------- SKELETON ---------- */
@@ -151,6 +200,9 @@ export default function PickupDetails() {
       </ScrollView>
     );
   }
+
+  const isNavigateDisabled =
+    !pickup?.Address && !(pickup as any)?.latitude && !(pickup as any)?.longitude;
 
   return (
     <ScrollView
@@ -222,11 +274,13 @@ export default function PickupDetails() {
         <Pressable
           onHoverIn={() => setNavigateHover(true)}
           onHoverOut={() => setNavigateHover(false)}
+          onPress={handleNavigate}
+          disabled={isNavigateDisabled}
           style={[
             styles.navigateBtn,
             {
               backgroundColor: theme.primary,
-              opacity: navigateHover ? 0.85 : 1,
+              opacity: navigateHover ? 0.85 : isNavigateDisabled ? 0.5 : 1,
             },
           ]}
         >
@@ -328,7 +382,7 @@ function DetailRow({
     <View style={styles.detailRow}>
       <Ionicons name={icon} size={18} color={theme.primary} />
       <View style={{ marginLeft: 10 }}>
-       {label ? (
+        {label ? (
           <Text style={[styles.detailLabel, { color: theme.subText }]}>
             {label}
           </Text>

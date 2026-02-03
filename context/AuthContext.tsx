@@ -8,11 +8,14 @@ import React, {
   useState,
 } from "react";
 
+import { registerForPushNotifications } from "@/services/pushNotifications";
+import { setupNotificationChannel } from "@/services/notificationSetup";
+
 /* =====================================================
    CONFIG
 ===================================================== */
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1/auth"; // 🔁 change for prod
+const API_URL = "https://rider-app-testing.onrender.com/api/v1/auth";
 
 const USER_KEY = "DRYDASH_RIDER_USER";
 const TOKEN_KEY = "DRYDASH_RIDER_TOKEN";
@@ -59,16 +62,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<Rider | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
-  // 🔑 start as true → Splash waits correctly
   const [isLoading, setIsLoading] = useState<boolean>(true);
-
   const isAuthenticated = !!token;
 
-  // 🔒 Prevent double execution (StrictMode safe)
   const hasRestoredRef = useRef(false);
 
   /* --------------------------------------------------
-     Restore auth + validate token with /profile
+     Restore auth + validate token
   -------------------------------------------------- */
   useEffect(() => {
     if (hasRestoredRef.current) return;
@@ -83,7 +83,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           return;
         }
 
-        // 🔐 Validate token with backend
         const res = await fetch(`${API_URL}/profile`, {
           headers: {
             Authorization: `Bearer ${storedToken}`,
@@ -91,7 +90,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         });
 
         if (!res.ok) {
-          // ❌ token invalid / expired
           await AsyncStorage.multiRemove([USER_KEY, TOKEN_KEY]);
           setUser(null);
           setToken(null);
@@ -114,11 +112,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         setUser(mappedUser);
         setToken(storedToken);
 
-        // cache safe user data
-        await AsyncStorage.setItem(
-          USER_KEY,
-          JSON.stringify(mappedUser)
-        );
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(mappedUser));
       } catch (error) {
         console.error("Auth restore failed:", error);
         setUser(null);
@@ -131,17 +125,46 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     restoreAuth();
   }, []);
 
+  useEffect(() => {
+    if (!token || !user?._id) return;
+
+    const initPush = async () => {
+      try {
+        await setupNotificationChannel();
+
+        const fcmToken = await registerForPushNotifications();
+        if (!fcmToken) return;
+
+        await fetch(
+          "https://rider-app-testing.onrender.com/api/v1/rider/push-tokens",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              token: fcmToken,
+              platform: "android",
+            }),
+          }
+        );
+      } catch (err) {
+        console.log("Push registration failed:", err);
+      }
+    };
+
+    initPush();
+  }, [token, user?._id]);
+
   /* --------------------------------------------------
-     Login (after OTP verification)
+     Login
   -------------------------------------------------- */
   const login = async (userData: Rider, accessToken: string) => {
     setUser(userData);
     setToken(accessToken);
 
-    await AsyncStorage.setItem(
-      USER_KEY,
-      JSON.stringify(userData)
-    );
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(userData));
     await AsyncStorage.setItem(TOKEN_KEY, accessToken);
   };
 
@@ -155,7 +178,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   };
 
   /* --------------------------------------------------
-     Memoized context value (VERY IMPORTANT)
+     Memoized context value
   -------------------------------------------------- */
   const value = useMemo(
     () => ({

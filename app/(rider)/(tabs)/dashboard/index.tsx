@@ -1,41 +1,35 @@
 // app/(rider)/(tabs)/dashboard/index.tsx
-import { useAuth } from "@/context/useAuth";
 import { useLocation } from "@/context/LocationContext";
+import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
+import moment from "moment";
+import React, { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Animated,
   Dimensions,
-  Easing,
   FlatList,
-  Linking,
+  Image,
+  Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  Alert,
 } from "react-native";
 import { Skeleton } from "../../../../components/ui/Skeleton";
 import { useTheme } from "../../../../context/ThemeContext";
 import { useFadeSlide } from "../../../../hooks/useFadeSlide";
 
-// NOTE: The pickup & delivery RELATED CODE has been commented out per request.
-// If you want to re-enable it later, remove the surrounding comments.
-
-// export const DashboardPickupListeners = new Set<(id: string) => void>();
-
-// export const dashboardPickupRemoved = (id: string) => {
-//   DashboardPickupListeners.forEach((fn) => fn(id));
-// };
-
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 const CARD_WIDTH = width - 48;
 const H_CARD = Math.min(320, width * 0.85);
 
-// API bases
 const PICKUP_API_BASE = "https://rider-app-testing.onrender.com/api/v1/rider";
 const ORDERS_API_BASE = "https://rider-app-testing.onrender.com/api/v1";
 
@@ -45,11 +39,9 @@ type Order = {
   priority: number;
   time: string;
   status: "Active" | "Pending" | "Delivered";
-  // pickups
   name?: string;
   address?: string;
   contact?: string;
-  // deliveries
   to?: string;
   from?: string;
   lat?: number | null;
@@ -63,235 +55,275 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { isTracking, lastLocation, toggleTracking, error: locationError } = useLocation();
 
-  // const [loading, setLoading] = useState(true);
+  const [tripId, setTripId] = useState<string | null>(null);
+  const [startKm, setStartKm] = useState("");
+  const [endKm, setEndKm] = useState("");
+  const [startImage, setStartImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [endImage, setEndImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [loading, setLoading] = useState(false);
-  // const [pickups, setPickups] = useState<Order[]>([]);
-  // const [deliveries, setDeliveries] = useState<Order[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
-  // animate KPI and header
-  const kpi = useFadeSlide(0, 20);
+  const [fulfilledCount, setFulfilledCount] = useState<number>(0);
+  const [deliveredCount, setDeliveredCount] = useState<number>(0);
+  const [dailyKm, setDailyKm] = useState<number>(0);
+  const [totalKm, setTotalKm] = useState<number>(0);
 
-  // animation refs keyed by order id (works for both pickups + deliveries)
-  // const itemOpacities = useRef<Record<string, Animated.Value>>({}).current;
-  // const itemTranslates = useRef<Record<string, Animated.Value>>({}).current;
+  // Modal states
+  const [showTripModal, setShowTripModal] = useState(false);
+  const [isStartingTrip, setIsStartingTrip] = useState(false);
+  const [isEndingTrip, setIsEndingTrip] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
 
-  /* ---------- mapping helpers ---------- */
+  const restoreOpenTrip = async () => {
+    try {
+      if (!user?._id) return;
 
-  // const mapPickupToOrder = (p: any): Order => {
-  //   let priority = 4;
-  //   if (p.type === "live") priority = 10;
-  //   else if (p.PickupStatus === "assigned") priority = 9;
-  //   else if (p.isRescheduled) priority = 6;
-  //
-  //   const status =
-  //     p.PickupStatus === "completed"
-  //       ? "Delivered"
-  //       : p.PickupStatus === "assigned"
-  //       ? "Active"
-  //       : "Pending";
-  //
-  //   return {
-  //     id: p._id,
-  //     kind: "pickup",
-  //     priority,
-  //     time: "Today",
-  //     status,
-  //     name: p.Name || "Customer",
-  //     address: p.Address || p.plantName || "Address not available",
-  //     contact: p.Contact || "N/A",
-  //   };
-  // };
+      const res = await fetch(
+        `${ORDERS_API_BASE}/trips/active/${user._id}`
+      );
+      if (!res.ok) {
+        console.warn("restoreOpenTrip: failed", res.status);
+        return;
+      }
+      const json = await res.json();
+      if (json.hasActiveTrip && json.trip) {
+        setTripId(json.trip._id);
+        setStartKm(String(json.trip.startKm));
 
-  // const mapOrderToDelivery = (o: any): Order => {
-  //   const status =
-  //     o.status && o.status.includes("assigned")
-  //       ? "Active"
-  //       : o.status === "delivered"
-  //       ? "Delivered"
-  //       : "Pending";
-  //   return {
-  //     id: o._id,
-  //     kind: "delivery",
-  //     priority: 7,
-  //     time: o.createdAt ? new Date(o.createdAt).toLocaleString() : "Today",
-  //     status,
-  //     to: o.customerName || "Customer",
-  //     from: o.order_id,
-  //     contact: o.contactNo || "N/A",
-  //     address: o.address || "Address not available",
-  //     lat: o.orderLocation?.latitude ?? null,
-  //     lng: o.orderLocation?.longitude ?? null,
-  //     price: o.price ? `₹${o.price}` : undefined,
-  //   };
-  // };
-
-  /* ---------- fetch functions ---------- */
-
-  // const getPickups = async () => {
-  //   if (!user?.email) {
-  //     setPickups([]);
-  //     return;
-  //   }
-  //
-  //   try {
-  //     const res = await fetch(
-  //       `${PICKUP_API_BASE}/getriderpickups?email=${encodeURIComponent(
-  //         user.email
-  //       )}`,
-  //       {
-  //         method: "GET",
-  //         headers: {
-  //           "Content-Type": "application/json",
-  //           "x-client-type": "mobile",
-  //         },
-  //       }
-  //     );
-  //
-  //     const json = await res.json();
-  //     if (!res.ok) {
-  //       console.warn("Pickups API non-ok:", json);
-  //       setPickups([]);
-  //       return;
-  //     }
-  //
-  //     const raw = Array.isArray(json.Pickups) ? json.Pickups : [];
-  //     const mapped = raw.map(mapPickupToOrder);
-  //
-  //     // keep only top 5 by priority
-  //     const sorted = mapped.sort((a: any, b: any) => b.priority - a.priority);
-  //     const top = sorted.slice(0, 5);
-  //
-  //     // init animation refs for pickups
-  //     top.forEach((o: any) => {
-  //       if (!itemOpacities[o.id]) itemOpacities[o.id] = new Animated.Value(0);
-  //       if (!itemTranslates[o.id])
-  //         itemTranslates[o.id] = new Animated.Value(18);
-  //     });
-  //
-  //     // animate pickups in
-  //     Animated.stagger(
-  //       60,
-  //       top.map((o: any) =>
-  //         Animated.parallel([
-  //           Animated.timing(itemOpacities[o.id], {
-  //             toValue: 1,
-  //             duration: 360,
-  //             easing: Easing.out(Easing.cubic),
-  //             useNativeDriver: true,
-  //           }),
-  //           Animated.timing(itemTranslates[o.id], {
-  //             toValue: 0,
-  //             duration: 400,
-  //             easing: Easing.out(Easing.cubic),
-  //             useNativeDriver: true,
-  //           }),
-  //         ])
-  //       )
-  //     ).start();
-  //
-  //     setPickups(top);
-  //   } catch (err) {
-  //     console.error("getPickups error:", err);
-  //     setPickups([]);
-  //   }
-  // };
-
-  // const fetchDeliveries = async () => {
-  //   if (!user?.email) {
-  //     setDeliveries([]);
-  //     return;
-  //   }
-  //
-  //   try {
-  //     const res = await fetch(
-  //       `${ORDERS_API_BASE}/getOrdersByFilter?email=${encodeURIComponent(
-  //         user.email
-  //       )}&status=delivery+rider+assigned&limit=1000&page=1`,
-  //       {
-  //         method: "GET",
-  //         headers: {
-  //           "Content-Type": "application/json",
-  //           "x-client-type": "mobile",
-  //         },
-  //       }
-  //     );
-  //
-  //     const json = await res.json();
-  //     if (!res.ok) {
-  //       console.warn("Deliveries API non-ok:", json);
-  //       setDeliveries([]);
-  //       return;
-  //     }
-  //
-  //     const raw = Array.isArray(json.orders) ? json.orders : [];
-  //     const mapped = raw.map(mapOrderToDelivery);
-  //
-  //     // init animation refs for deliveries
-  //     mapped.forEach((o: any) => {
-  //       if (!itemOpacities[o.id]) itemOpacities[o.id] = new Animated.Value(1); // visible (we'll animate with page)
-  //       if (!itemTranslates[o.id]) itemTranslates[o.id] = new Animated.Value(0);
-  //     });
-  //
-  //     setDeliveries(mapped);
-  //   } catch (err) {
-  //     console.error("fetchDeliveries error:", err);
-  //     setDeliveries([]);
-  //   }
-  // };
-
-  /* ---------- combined loader + effect ---------- */
-
-  // const loadAll = async () => {
-  //   setLoading(true);
-  //   try {
-  //     await Promise.all([getPickups(), fetchDeliveries()]);
-  //   } finally {
-  //     setLoading(false);
-  //     setRefreshing(false);
-  //   }
-  // };
-
-  useEffect(() => {
-    if (!user?.email) return;
-    // loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.email]);
-
-  // listen for completed pickup (instant removal)
-  useEffect(() => {
-    // const handler = (id: string) => {
-    //   setPickups((prev) => prev.filter((p) => p.id !== id));
-    // };
-
-    // DashboardPickupListeners.add(handler);
-
-    return () => {
-      // DashboardPickupListeners.delete(handler);
-    };
-  }, []);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    // loadAll();
-    setRefreshing(false);
+        if (json.trip.startImage) {
+          setStartImage({
+            uri: json.trip.startImage,
+            fileSize: 0,
+            width: 0,
+            height: 0,
+          } as any);
+        }
+      } else {
+        setTripId(null);
+        setStartKm("");
+        setStartImage(null);
+      }
+    } catch (err) {
+      console.warn("Error restoring open trip:", err);
+    }
   };
 
-  /* ---------- render helpers ---------- */
+  const fetchKilometersData = useCallback(async () => {
+    try {
+      if (!user?._id) return;
 
-  // const upcomingPickups = pickups
-  //   .slice()
-  //   .sort((a, b) => b.priority - a.priority);
-  // const upcomingDeliveries = deliveries
-  //   .slice()
-  //   .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
-  //   .slice(0, 5);
+      const today = getLocalYYYYMMDD();
+      const dailyRes = await fetch(
+        `${ORDERS_API_BASE}/trips/daily/${user._id}?date=${today}`
+      );
+
+      if (dailyRes.ok) {
+        const dailyJson = await dailyRes.json();
+        setDailyKm(dailyJson.totalDailyDistance || 0);
+      }
+
+      const totalRes = await fetch(
+        `${ORDERS_API_BASE}/trips/custom-summary/${user._id}`
+      );
+
+      if (totalRes.ok) {
+        const totalJson = await totalRes.json();
+        setTotalKm(totalJson.userTotalKm || 0);
+      }
+    } catch (err) {
+      console.warn("Error fetching kilometers data:", err);
+    }
+  }, [user?._id]);
+
+  const getLocalYYYYMMDD = () => {
+    return moment().format("YYYY-MM-DD");
+  };
+
+  const fetchRiderTasks = useCallback(async (date?: string) => {
+    try {
+      if (!user?._id) return;
+      const d = date || getLocalYYYYMMDD();
+      const url = `${PICKUP_API_BASE}/rider-tasks/${user._id}?date=${encodeURIComponent(d)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn("fetchRiderTasks failed:", res.status);
+        return;
+      }
+      const json = await res.json();
+      const summary = json.summary || {};
+
+      setFulfilledCount(Number(summary.totalCompletedPickups ?? 0));
+      setDeliveredCount(Number(summary.totalCompletedDeliveries ?? 0));
+    } catch (err) {
+      console.warn("Error fetching rider tasks:", err);
+    }
+  }, [user?._id]);
+
+  const kpi = useFadeSlide(0, 20);
+
+  const compressImage = async (image: ImagePicker.ImagePickerAsset) => {
+    try {
+      setIsCompressing(true);
+
+      const originalSize = image.fileSize || 0;
+
+      // Compress image with expo-image-manipulator
+      const manipResult = await manipulateAsync(
+        image.uri,
+        [
+          { resize: { width: 900 } }
+        ],
+        {
+          compress: 0.5,
+          format: SaveFormat.JPEG // Convert to JPEG
+        }
+      );
+
+      const compressedSize = (manipResult.width) * (manipResult.height || 600) * 0.5;
+      const savedPercentage = originalSize
+        ? Math.round(((originalSize - compressedSize) / originalSize) * 100)
+        : 0;
+
+      console.log(`Image compressed: ${savedPercentage}% size reduction`);
+
+      return {
+        uri: manipResult.uri,
+        width: manipResult.width,
+        height: manipResult.height,
+        fileSize: compressedSize,
+      };
+    } catch (error) {
+      console.error("Image compression error:", error);
+      // Return original if compression fails
+      return image;
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  const clickPhoto = async (setter: any) => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Required",
+        "Camera access is required to capture odometer photos"
+      );
+      return;
+    }
+
+    const res = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.4,
+      cameraType: ImagePicker.CameraType.back,
+      allowsEditing: false,
+    });
+
+    if (!res.canceled && res.assets?.length) {
+      const original = res.assets[0];
+
+      setter(original);
+
+      compressImage(original).then((compressed) => {
+        setter(compressed);
+      });
+    }
+  };
+
+  const handleStartTrip = async () => {
+    if (!startKm || !startImage || !user?._id) {
+      Alert.alert("Missing Information", "Please enter start KM and capture odometer photo");
+      return;
+    }
+
+    setIsStartingTrip(true);
+
+    const form = new FormData();
+    form.append("riderId", user._id);
+    form.append("startKm", startKm);
+    form.append("image", {
+      uri: startImage.uri,
+      name: "start.jpg",
+      type: "image/jpeg",
+    } as any);
+
+    try {
+      const res = await fetch(`${ORDERS_API_BASE}/trips/start`, {
+        method: "POST",
+        body: form,
+      });
+
+      const json = await res.json();
+
+      if (res.ok) {
+        setTripId(json.trip._id);
+        setShowTripModal(false);
+        Alert.alert("Trip Started", "Your trip has been started successfully!");
+        fetchKilometersData();
+      } else {
+        Alert.alert("Error", json.message || "Failed to start trip");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setIsStartingTrip(false);
+    }
+  };
+
+  const handleEndTrip = async () => {
+    if (!endKm || !endImage || !tripId) {
+      Alert.alert("Missing Information", "Please enter end KM and capture odometer photo");
+      return;
+    }
+
+    setIsEndingTrip(true);
+
+    const form = new FormData();
+    form.append("endKm", endKm);
+    form.append("image", {
+      uri: endImage.uri,
+      name: "end.jpg",
+      type: "image/jpeg",
+    } as any);
+
+    try {
+      const res = await fetch(
+        `${ORDERS_API_BASE}/trips/${tripId}/end`,
+        {
+          method: "PUT",
+          body: form,
+        }
+      );
+
+      const json = await res.json();
+
+      if (res.ok) {
+        Alert.alert(
+          "Trip Completed",
+          `Distance covered: ${json.trip.distance} km\n\nGreat work!`
+        );
+        setTripId(null);
+        setStartKm("");
+        setEndKm("");
+        setStartImage(null);
+        setEndImage(null);
+        setShowTripModal(false);
+        fetchKilometersData();
+      } else {
+        Alert.alert("Error", json.message || "Failed to end trip");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setIsEndingTrip(false);
+    }
+  };
 
   const confirmToggle = () => {
     if (isTracking) {
       Alert.alert(
-        "Stop live tracking?",
-        "If you stop live tracking your real-time location will no longer be shared. Are you sure you want to stop?",
+        "Stop Live Tracking?",
+        "Your real-time location will no longer be shared with admin.",
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -309,7 +341,7 @@ export default function Dashboard() {
       );
     } else {
       Alert.alert(
-        "Start live tracking?",
+        "Start Live Tracking?",
         "Enable live tracking to share your real-time location with admin.",
         [
           { text: "Cancel", style: "cancel" },
@@ -328,7 +360,6 @@ export default function Dashboard() {
     }
   };
 
-  // Add this function to render location status
   const renderLocationStatus = () => (
     <View style={styles.locationStatusContainer}>
       <TouchableOpacity
@@ -352,18 +383,191 @@ export default function Dashboard() {
           {isTracking ? 'LIVE TRACKING' : 'OFFLINE'}
         </Text>
       </TouchableOpacity>
-      
+
       {lastLocation && (
         <Text style={[styles.lastUpdateText, { color: theme.subText }]}>
-          Last: {new Date(lastLocation.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          Last update: {new Date(lastLocation.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
       )}
-      
+
       {locationError && (
         <Text style={styles.errorText}>⚠️ {locationError}</Text>
       )}
     </View>
   );
+
+  const renderTripModal = () => (
+    <Modal
+      visible={showTripModal}
+      animationType="slide"
+      transparent={true}
+      onRequestClose={() => setShowTripModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <View>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>
+                {tripId ? "End Trip" : "Start Trip"}
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: theme.subText }]}>
+                {tripId ? "Record your final odometer reading" : "Record your starting odometer reading"}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setShowTripModal(false)}
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={24} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Odometer Input */}
+            <View style={styles.inputSection}>
+              <Text style={[styles.inputLabel, { color: theme.text }]}>
+                Odometer Reading (KM)
+              </Text>
+              <View style={[styles.inputWrapper, { borderColor: theme.border, backgroundColor: theme.card }]}>
+                <Ionicons name="speedometer-outline" size={20} color={theme.primary} style={styles.inputIcon} />
+                <TextInput
+                  placeholder={tripId ? "Enter ending KM" : "Enter starting KM"}
+                  placeholderTextColor={theme.subText}
+                  keyboardType="numeric"
+                  value={tripId ? endKm : startKm}
+                  onChangeText={tripId ? setEndKm : setStartKm}
+                  style={[styles.textInput, { color: theme.text }]}
+                />
+              </View>
+            </View>
+
+            {/* Photo Section */}
+            <View style={styles.photoSection}>
+              <View style={styles.photoLabelRow}>
+                <Text style={[styles.inputLabel, { color: theme.text }]}>
+                  Odometer Photo
+                </Text>
+                {isCompressing && (
+                  <View style={styles.compressingBadge}>
+                    <ActivityIndicator size="small" color={theme.primary} />
+                    <Text style={[styles.compressingText, { color: theme.primary }]}>
+                      Compressing...
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {(tripId ? endImage : startImage) ? (
+                <View style={styles.imagePreviewContainer}>
+                  <Image
+                    source={{ uri: (tripId ? endImage : startImage)?.uri }}
+                    style={styles.imagePreview}
+                  />
+                  <View style={styles.imageInfoOverlay}>
+                    <View style={styles.compressionBadge}>
+                      <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+                      <Text style={styles.compressionText}>Compressed</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.retakeButton}
+                    onPress={() => clickPhoto(tripId ? setEndImage : setStartImage)}
+                  >
+                    <Ionicons name="camera" size={16} color="#fff" />
+                    <Text style={styles.retakeText}>Retake Photo</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.photoButton, { borderColor: theme.border, backgroundColor: theme.card }]}
+                  onPress={() => clickPhoto(tripId ? setEndImage : setStartImage)}
+                  disabled={isCompressing}
+                >
+                  <View style={[styles.cameraIconWrapper, { backgroundColor: theme.primary + '20' }]}>
+                    <Ionicons name="camera" size={32} color={theme.primary} />
+                  </View>
+                  <Text style={[styles.photoButtonText, { color: theme.text }]}>
+                    Capture Odometer
+                  </Text>
+                  <Text style={[styles.photoButtonSubtext, { color: theme.subText }]}>
+                    Take a clear photo of your odometer reading
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.actionButtons}>
+              <TouchableOpacity
+                style={[styles.cancelButton, { borderColor: theme.border }]}
+                onPress={() => setShowTripModal(false)}
+              >
+                <Text style={[styles.cancelButtonText, { color: theme.text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  { backgroundColor: tripId ? '#ef4444' : theme.primary }
+                ]}
+                onPress={tripId ? handleEndTrip : handleStartTrip}
+                disabled={isStartingTrip || isEndingTrip || isCompressing}
+              >
+                {(isStartingTrip || isEndingTrip) ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text style={styles.submitButtonText}>Processing...</Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons
+                      name={tripId ? "stop-circle" : "play-circle"}
+                      size={20}
+                      color="#fff"
+                    />
+                    <Text style={styles.submitButtonText}>
+                      {tripId ? "End Trip" : "Start Trip"}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const fetchData = async () => {
+      await Promise.all([
+        restoreOpenTrip(),
+        fetchRiderTasks(),
+        fetchKilometersData()
+      ]);
+    };
+
+    fetchData();
+  }, [user?.email, fetchRiderTasks]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      restoreOpenTrip(),
+      fetchRiderTasks(),
+      fetchKilometersData()
+    ]);
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    return () => { };
+  }, []);
 
   if (loading) {
     return (
@@ -372,504 +576,140 @@ export default function Dashboard() {
         contentContainerStyle={{ paddingTop: 18, paddingBottom: 120 }}
       >
         <View style={styles.topRow}>
-          <Skeleton
-            height={64}
-            radius={12}
-            style={{ width: CARD_WIDTH * 0.62 }}
-          />
+          <Skeleton height={64} radius={12} style={{ width: CARD_WIDTH * 0.62 }} />
           <Skeleton height={40} radius={12} style={{ width: 80 }} />
         </View>
-
         <View style={{ paddingHorizontal: 16 }}>
-          <Text
-            style={[
-              styles.sectionTitleSmall,
-              { color: theme.subText, marginTop: 18 },
-            ]}
-          >
-            Upcoming
-          </Text>
           <Skeleton height={H_CARD} radius={14} style={{ marginTop: 12 }} />
-          <Skeleton height={H_CARD} radius={14} style={{ marginTop: 12 }} />
-          <Text
-            style={[
-              styles.sectionTitleSmall,
-              { color: theme.subText, marginTop: 18 },
-            ]}
-          >
-            History
-          </Text>
-          <Skeleton height={90} radius={12} style={{ marginTop: 12 }} />
-          <Skeleton height={90} radius={12} style={{ marginTop: 12 }} />
         </View>
       </ScrollView>
     );
   }
 
   return (
-    <FlatList
-      style={{ flex: 1, backgroundColor: theme.background }}
-      data={[]} // header-only
-      keyExtractor={() => "dashboard-header"}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          tintColor={theme.primary}
-        />
-      }
-      ListHeaderComponent={
-        <>
-          {/* Location Tracking Status - kept */}
-          {renderLocationStatus()}
-
-          {/* Priority Pickups - COMMENTED OUT */}
-          {/*
-          <SectionHeader
-            title="Pickup"
-            subtitle={
-              upcomingPickups.length
-                ? `${upcomingPickups.length} waiting`
-                : "None"
-            }
+    <>
+      <FlatList
+        style={{ flex: 1, backgroundColor: theme.background }}
+        data={[]}
+        keyExtractor={() => "dashboard-header"}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.primary}
           />
+        }
+        ListHeaderComponent={
+          <>
+            {/* Location Status */}
+            {renderLocationStatus()}
 
-          {upcomingPickups.length > 0 ? (
-            <FlatList
-              data={upcomingPickups}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 14, gap: 12 }}
-              decelerationRate="fast"
-              renderItem={({ item }) => (
-                <Animated.View
-                  style={{
-                    opacity: itemOpacities[item.id] ?? 1,
-                    transform: [{ translateY: itemTranslates[item.id] ?? 0 }],
-                  }}
-                >
-                  <UpcomingCard
-                    order={item}
-                    theme={theme}
-                    onPress={() =>
-                      router.push(`/(rider)/order/pickup/${item.id}`)
-                    }
-                  />
-                </Animated.View>
-              )}
-              keyExtractor={(i) => i.id}
-            />
-          ) : (
-            <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-              <View
-                style={{
-                  backgroundColor: theme.card,
-                  borderRadius: 12,
-                  padding: 16,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "800",
-                    color: theme.text,
-                    marginBottom: 6,
-                  }}
-                >
-                  No immediate pickups
-                </Text>
-
-                <Text
-                  style={{
-                    fontSize: 13,
-                    color: theme.subText,
-                    lineHeight: 18,
-                  }}
-                >
-                  You're all caught up.
-                </Text>
-              </View>
-            </View>
-          )}
-          */}
-
-          {/* Priority Deliveries - COMMENTED OUT */}
-          {/*
-          <SectionHeader
-            title="Delivery"
-            subtitle={
-              upcomingDeliveries.length
-                ? `${upcomingDeliveries.length} waiting`
-                : "None"
-            }
-          />
-
-          {upcomingDeliveries.length > 0 ? (
-            <FlatList
-              data={upcomingDeliveries}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingHorizontal: 14, gap: 12 }}
-              decelerationRate="fast"
-              renderItem={({ item }) => (
-                <Animated.View
-                  style={{
-                    opacity: itemOpacities[item.id] ?? 1,
-                    transform: [{ translateY: itemTranslates[item.id] ?? 0 }],
-                  }}
-                >
-                  <DeliveryCard
-                    order={item}
-                    theme={theme}
-                    onPress={() =>
-                      router.push(`/(rider)/order/delivered/${item.id}`)
-                    }
-                    onOpenMap={() => {
-                      if (item.lat != null && item.lng != null) {
-                        const url = `https://www.google.com/maps?q=${item.lat},${item.lng}`;
-                        Linking.openURL(url).catch((e) =>
-                          console.warn("open map error", e)
-                        );
-                      }
-                    }}
-                  />
-                </Animated.View>
-              )}
-              keyExtractor={(i) => i.id}
-            />
-          ) : (
-            <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-              <View
-                style={{
-                  backgroundColor: theme.card,
-                  borderRadius: 12,
-                  padding: 16,
-                  borderWidth: 1,
-                  borderColor: theme.border,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: "800",
-                    color: theme.text,
-                    marginBottom: 6,
-                  }}
-                >
-                  No immediate deliveries
-                </Text>
-
-                <Text
-                  style={{
-                    fontSize: 13,
-                    color: theme.subText,
-                    lineHeight: 18,
-                  }}
-                >
-                  You're all caught up.
-                </Text>
-              </View>
-            </View>
-          )}
-          */}
-
-          {/* Top Row (wallet + rating) */}
-          <Animated.View
-            style={[
-              styles.topRow,
-              {
-                opacity: kpi.opacity,
-                transform: [{ translateY: kpi.translateY }],
-              },
-            ]}
-          >
-            {/* <View
-              style={[ 
-                styles.pill,
-                { backgroundColor: theme.card, borderColor: theme.border },
+            {/* KPI Cards */}
+            <Animated.View
+              style={[
+                styles.kpiContainer,
+                {
+                  opacity: kpi.opacity,
+                  transform: [{ translateY: kpi.translateY }],
+                },
               ]}
             >
-              <Text style={[styles.pillTitle, { color: theme.subText }]}> 
-                WALLET
-              </Text>
-              <Text style={[styles.pillValue, { color: theme.text }]}> 
-                ₹ -- --
-              </Text>
-            </View> */}
+              <KpiCard title="FULFILLED" value={String(fulfilledCount)} theme={theme} />
+              <KpiCard title="DELIVERED" value={String(deliveredCount)} theme={theme} />
+            </Animated.View>
 
-            {/* <View style={[styles.ratingBox, { backgroundColor: theme.card }]}> 
-              <Ionicons name="star" size={12} color="#FACC15" />
-              <Text style={[styles.ratingText, { color: theme.text }]}>--</Text>
-            </View> */}
-          </Animated.View>
+            <Animated.View
+              style={[
+                styles.kpiContainer,
+                {
+                  opacity: kpi.opacity,
+                  transform: [{ translateY: kpi.translateY }],
+                },
+              ]}
+            >
+              <KpiCard title="KM TODAY" value={`${dailyKm} km`} theme={theme} />
+              <KpiCard title="TOTAL KM" value={`${totalKm} km`} theme={theme} />
+            </Animated.View>
 
-          {/* KPI Cards */}
-          <Animated.View
-            style={[
-              styles.kpiContainer,
-              {
-                opacity: kpi.opacity,
-                transform: [{ translateY: kpi.translateY }],
-              },
-            ]}
-          >
-            <KpiCard title="FULFILLED" value="--" theme={theme} />
-            <KpiCard title="DELIVERED" value="--" theme={theme} />
-          </Animated.View>
+            {/* Trip Tracker Card */}
+            <View style={styles.tripTrackerContainer}>
+              <View
+                style={[
+                  styles.tripTrackerCard,
+                  { backgroundColor: theme.card, borderColor: theme.border }
+                ]}
+              >
+                <View style={styles.tripTrackerHeader}>
+                  <View style={[styles.tripIconWrapper, { backgroundColor: theme.primary + '15' }]}>
+                    <Ionicons name="speedometer" size={24} color={theme.primary} />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={[styles.tripTrackerTitle, { color: theme.text }]}>
+                      Daily Trip Tracker
+                    </Text>
+                    <Text style={[styles.tripTrackerSubtitle, { color: theme.subText }]}>
+                      {tripId ? "Trip in progress" : "Ready to start tracking"}
+                    </Text>
+                  </View>
+                  {tripId && (
+                    <View style={styles.activeBadge}>
+                      <View style={styles.pulseCircle} />
+                      <Text style={styles.activeText}>ACTIVE</Text>
+                    </View>
+                  )}
+                </View>
 
-          <Animated.View
-            style={[
-              styles.kpiContainer,
-              {
-                opacity: kpi.opacity,
-                transform: [{ translateY: kpi.translateY }],
-              },
-            ]}
-          >
-            <KpiCard title="KM TODAY" value="-- km" theme={theme} />
-            <KpiCard title="TOTAL KM" value="-- km" theme={theme} />
-          </Animated.View>
-        </>
-      }
-      renderItem={null}
-    />
+                {tripId && (
+                  <View style={[styles.tripInfoBox, { backgroundColor: theme.background }]}>
+                    <View style={styles.tripInfoItem}>
+                      <Ionicons name="play-circle" size={16} color={theme.primary} />
+                      <Text style={[styles.tripInfoLabel, { color: theme.subText }]}>
+                        Started at
+                      </Text>
+                      <Text style={[styles.tripInfoValue, { color: theme.text }]}>
+                        {startKm} km
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[
+                    styles.tripActionButton,
+                    {
+                      backgroundColor: tripId ? '#ef4444' : theme.primary,
+                      borderColor: tripId ? '#dc2626' : theme.primary
+                    }
+                  ]}
+                  onPress={() => setShowTripModal(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={tripId ? "stop-circle" : "play-circle"}
+                    size={20}
+                    color="#fff"
+                  />
+                  <Text style={styles.tripActionButtonText}>
+                    {tripId ? "End Trip" : "Start New Trip"}
+                  </Text>
+                  <Ionicons name="arrow-forward" size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        }
+        renderItem={null}
+      />
+
+      {/* Trip Modal */}
+      {renderTripModal()}
+    </>
   );
 }
 
-/* ---------- small components ---------- */
-
-// function SectionHeader({
-//   title,
-//   subtitle,
-// }: {
-//   title: string;
-//   subtitle?: string;
-// }) {
-//   const { theme } = useTheme();
-//   return (
-//     <View
-//       style={{
-//         paddingHorizontal: 16,
-//         marginTop: 18,
-//         marginBottom: 6,
-//         flexDirection: "row",
-//         justifyContent: "space-between",
-//         alignItems: "center",
-//       }}
-//     >
-//       <Text
-//         style={{
-//           fontSize: 16,
-//           fontWeight: "800",
-//           color: theme.text,
-//         }}
-//       >
-//         {title}
-//       </Text>
-//       {subtitle ? (
-//         <Text style={{ fontSize: 13, color: "#94A3B8", fontWeight: "700" }}>
-//           {subtitle}
-//         </Text>
-//       ) : null}
-//     </View>
-//   );
-// }
-
-/* ---------- Upcoming pickup card ---------- */
-// function UpcomingCard({
-//   order,
-//   theme,
-//   onPress,
-// }: {
-//   order: Order;
-//   theme: any;
-//   onPress: () => void;
-// }) {
-//   return (
-//     <TouchableOpacity
-//       activeOpacity={0.9}
-//       onPress={onPress}
-//       style={[
-//         styles.upcomingCard,
-//         {
-//           width: H_CARD,
-//           backgroundColor: theme.card,
-//           borderColor: theme.border,
-//         },
-//       ]}
-//     >
-//       <View
-//         style={{
-//           flexDirection: "row",
-//           justifyContent: "space-between",
-//           alignItems: "flex-start",
-//         }}
-//       >
-//         <View style={{ flex: 1 }}>
-//           <Text style={{ fontWeight: "900", fontSize: 16, color: theme.text }}>
-//             {order.name}
-//           </Text>
-
-//           <Text
-//             style={{ marginTop: 8, fontWeight: "700", color: theme.primary }}
-//           >
-//             {order.contact}
-//           </Text>
-
-//           <View style={{ flexDirection: "row", marginTop: 8 }}>
-//             <Ionicons
-//               name="location-outline"
-//               size={14}
-//               color={theme.subText}
-//               style={{ marginTop: 2, marginRight: 8 }}
-//             />
-//             <Text
-//               style={{ color: theme.subText, fontSize: 13, lineHeight: 18 }}
-//               numberOfLines={3}
-//             >
-//               {order.address}
-//             </Text>
-//           </View>
-//         </View>
-
-//         <View style={{ marginLeft: 12 }}>
-//           <View
-//             style={{
-//               backgroundColor: "#ECFDF5",
-//               paddingHorizontal: 10,
-//               paddingVertical: 6,
-//               borderRadius: 999,
-//             }}
-//           >
-//             <Text style={{ color: "#166534", fontWeight: "800" }}>
-//               {order.status.toUpperCase()}
-//             </Text>
-//           </View>
-//         </View>
-//       </View>
-//     </TouchableOpacity>
-//   );
-// }
-
-/* ---------- Delivery card (with location button) ---------- */
-// function DeliveryCard({
-//   order,
-//   theme,
-//   onPress,
-//   onOpenMap,
-// }: {
-//   order: Order;
-//   theme: any;
-//   onPress: () => void;
-//   onOpenMap: () => void;
-// }) {
-//   return (
-//     <TouchableOpacity
-//       activeOpacity={0.9}
-//       onPress={onPress}
-//       style={[
-//         styles.upcomingCard,
-//         {
-//           width: H_CARD,
-//           backgroundColor: theme.card,
-//           borderColor: theme.border,
-//         },
-//       ]}
-//     >
-//       <View
-//         style={{
-//           flexDirection: "row",
-//           justifyContent: "space-between",
-//           alignItems: "flex-start",
-//         }}
-//       >
-//         <View style={{ flex: 1 }}>
-//           <Text style={{ fontWeight: "900", fontSize: 16, color: theme.text }}>
-//             {order.to || "Customer"}
-//           </Text>
-
-//           {order.contact ? (
-//             <Text
-//               style={{ marginTop: 8, fontWeight: "700", color: theme.primary }}
-//             >
-//               {order.contact}
-//             </Text>
-//           ) : null}
-
-//           <View style={{ flexDirection: "row", marginTop: 8 }}>
-//             <Ionicons
-//               name="location-outline"
-//               size={14}
-//               color={theme.subText}
-//               style={{ marginTop: 2, marginRight: 8 }}
-//             />
-//             <Text
-//               style={{ color: theme.subText, fontSize: 13, lineHeight: 18 }}
-//               numberOfLines={3}
-//             >
-//               {order.address}
-//             </Text>
-//           </View>
-//         </View>
-
-//         <View style={{ justifyContent: "center", alignItems: "center" }}>
-//           <TouchableOpacity
-//             activeOpacity={0.7}
-//             onPress={onOpenMap}
-//             style={{ padding: 8 }}
-//           >
-//             <Ionicons name="location" size={22} color={theme.primary} />
-//           </TouchableOpacity>
-
-//           <View
-//             style={{
-//               marginTop: 8,
-//               backgroundColor: "#F0FDF4",
-//               paddingHorizontal: 8,
-//               paddingVertical: 6,
-//               borderRadius: 999,
-//             }}
-//           >
-//             <Text style={{ color: "#166534", fontWeight: "800" }}>
-//               {order.status}
-//             </Text>
-//           </View>
-//         </View>
-//       </View>
-//     </TouchableOpacity>
-//   );
-// }
-
-// function EmptyMini({ label }: { label: string }) {
-//   return (
-//     <View style={{ paddingHorizontal: 16 }}>
-//       <View
-//         style={{
-//           padding: 12,
-//           borderRadius: 12,
-//           backgroundColor: "#0F172A10",
-//           marginBottom: 6,
-//         }}
-//       >
-//         <Text style={{ color: "#64748B" }}>{label}</Text>
-//       </View>
-//     </View>
-//   );
-// }
-
-function KpiCard({
-  title,
-  value,
-  theme,
-}: {
-  title: string;
-  value: string;
-  theme: any;
-}) {
+function KpiCard({ title, value, theme }: { title: string; value: string; theme: any }) {
   return (
     <View
       style={[
@@ -883,18 +723,16 @@ function KpiCard({
   );
 }
 
-// Add these new styles
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // Location Status Styles
+  // Location Status
   locationStatusContainer: {
     paddingHorizontal: 16,
     marginTop: 8,
     marginBottom: 8,
     alignItems: 'center',
   },
-
   locationStatusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -906,7 +744,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 6,
   },
-
   statusIndicator: {
     width: 20,
     height: 20,
@@ -916,26 +753,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
-
   statusDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
   },
-
   statusText: {
     color: 'white',
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.5,
   },
-
   lastUpdateText: {
     fontSize: 11,
     fontWeight: '600',
     marginTop: 2,
   },
-
   errorText: {
     fontSize: 11,
     color: '#ef4444',
@@ -943,7 +776,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Existing styles...
+  // KPI Cards
   topRow: {
     marginTop: 20,
     paddingHorizontal: 16,
@@ -952,25 +785,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-
-  pill: {
-    padding: 12,
-    borderRadius: 12,
-    width: CARD_WIDTH * 0.62,
-    borderWidth: 1,
-  },
-  pillTitle: { fontSize: 12, fontWeight: "700", opacity: 0.9 },
-  pillValue: { fontSize: 18, fontWeight: "900", marginTop: 8 },
-
-  ratingBox: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    alignItems: "center",
-    flexDirection: "row",
-  },
-  ratingText: { marginLeft: 6, fontWeight: "800" },
-
   kpiContainer: {
     paddingHorizontal: 16,
     marginTop: 6,
@@ -983,84 +797,305 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
   },
-  kpiTitle: { fontSize: 11, fontWeight: "700", marginBottom: 6 },
-  kpiValue: { fontSize: 20, fontWeight: "900" },
-
-  upcomingCard: {
-    borderRadius: 14,
-    padding: 16,
-    marginRight: 12,
-    borderWidth: 1,
-    minHeight: H_CARD * 0.45,
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 3,
-  },
-
-  pillMini: {
-    backgroundColor: "#ECFDF5",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-  pillMiniOutline: {
-    borderWidth: 1,
-    borderColor: "#10B981",
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 999,
-  },
-
-  sectionHeader: {
-    paddingHorizontal: 14,
-    marginTop: 8,
+  kpiTitle: {
+    fontSize: 11,
+    fontWeight: "700",
     marginBottom: 6,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    letterSpacing: 0.5
   },
-  sectionTitle: { fontSize: 16, fontWeight: "800" },
-  sectionTitleSmall: { fontSize: 14, fontWeight: "800" },
-  viewAll: { fontSize: 13, fontWeight: "700" },
+  kpiValue: {
+    fontSize: 20,
+    fontWeight: "900"
+  },
 
-  orderCard: {
-    marginHorizontal: 16,
-    padding: 8,
-    borderRadius: 14,
+  // Trip Tracker
+  tripTrackerContainer: {
+    paddingHorizontal: 16,
+    marginTop: 16,
+  },
+  tripTrackerCard: {
+    borderRadius: 16,
+    padding: 18,
     borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
     shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    elevation: 4,
   },
-  orderLeft: { width: 48, alignItems: "center" },
-  orderIconWrap: {
-    width: 40,
-    height: 32,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
+  tripTrackerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  orderCenter: { flex: 1, paddingHorizontal: 8 },
-
-  orderId: { fontWeight: "800", marginBottom: 4 },
-  orderTime: { fontSize: 12 },
-  orderMeta: { fontSize: 12, marginTop: 4 },
-
-  orderRight: { alignItems: "flex-end", width: 110 },
-  orderPrice: { fontWeight: "900", fontSize: 16, marginBottom: 6 },
-
-  statusPill: {
-    paddingHorizontal: 8,
+  tripIconWrapper: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripTrackerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  tripTrackerSubtitle: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  activeBadge: {
+    backgroundColor: '#10b981',
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pulseCircle: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
+    marginRight: 6,
+  },
+  activeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  tripInfoBox: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  tripInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tripInfoLabel: {
+    fontSize: 13,
+  },
+  tripInfoValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tripActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
     borderWidth: 1,
+    gap: 8,
+  },
+  tripActionButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 8,
+    paddingBottom: 32,
+    maxHeight: height * 0.85,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -4 },
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+  },
+  closeButton: {
+    padding: 4,
+  },
+
+  // Input Section
+  inputSection: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 56,
+  },
+  inputIcon: {
+    marginRight: 10,
+  },
+  textInput: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Photo Section
+  photoSection: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+  },
+  photoLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  compressingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  compressingText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  photoButton: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderRadius: 16,
+    padding: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraIconWrapper: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  photoButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  photoButtonSubtext: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  compressionNote: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  imagePreviewContainer: {
+    position: 'relative',
+  },
+  imagePreview: {
+    width: '100%',
+    height: 220,
+    borderRadius: 16,
+    resizeMode: 'cover',
+  },
+  imageInfoOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+  },
+  compressionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.9)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    gap: 4,
+  },
+  compressionText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  retakeButton: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  retakeText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // Action Buttons
+  actionButtons: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingTop: 28,
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  submitButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
 });

@@ -65,12 +65,11 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         await AsyncStorage.setItem(
           "bg_status",
-          JSON.stringify({ lastSentTime: new Date().toISOString() })
+          JSON.stringify({ lastSentTime: new Date().toISOString() }),
         );
       } catch (e) {
         console.warn("Failed to persist bg_status", e);
       }
-
     } catch (err) {
       console.error("❌ Failed to send location update:", err);
       setError("Failed to send location update");
@@ -101,9 +100,8 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
           name: user.name || "Unknown Rider",
           phone: user.phone || "N/A",
           bgToken: (user as any).bgToken || null,
-        })
+        }),
       );
-
 
       await locationService.startTracking();
 
