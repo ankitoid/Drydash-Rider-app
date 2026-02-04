@@ -1,12 +1,12 @@
 // context/NotificationContext.tsx
 import InAppToast from "@/components/notifications/InAppToast";
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import * as Notifications from "expo-notifications";
-import { router } from "expo-router";
 import { useAuth } from "@/context/useAuth";
-import { registerForPushNotifications } from "@/services/pushNotifications";
 import { setupNotificationChannel } from "@/services/notificationSetup";
 import { playNotificationSound } from "@/services/notificationSound";
+import { registerForPushNotifications } from "@/services/pushNotifications";
+import * as Notifications from "expo-notifications";
+import { router } from "expo-router";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 
 type NotifyPayload = {
   title: string;
@@ -29,6 +29,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   const [duration, setDuration] = useState(500);
 
   const fcmTokenRef = useRef<string | null>(null);
+  const handledInitialResponseRef = useRef(false);
 
   const notify = ({ title, message, duration = 500 }: NotifyPayload) => {
     setTitle(title);
@@ -40,7 +41,41 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   const hide = () => {
     setVisible(false);
   };
-  
+
+  const handleNavigationFromData = (data: any) => {
+    try {
+      if (!data) return;
+
+      const orderId = data?.orderId ?? data?.order_id ?? data?.id;
+
+      const isPickup =
+        data?.screen === "pickup" ||
+        data?.type === "pickup" ||
+        data?.target === "pickup" ||
+        Boolean(data?.pickupId) ||
+        Boolean(data?.pickup_id);
+
+      const pickupId = data?.pickupId ?? data?.pickup_id ?? orderId;
+
+      if (isPickup && pickupId) {
+        router.push(`/(rider)/order/pickup/${String(pickupId)}`);
+        return;
+      }
+
+      if (orderId) {
+        router.push(`/(rider)/order/delivered/${String(orderId)}`);
+        return;
+      }
+
+      if (data?.deep_link) {
+        router.push(String(data.deep_link) as any);
+        return;
+      }
+    } catch (err) {
+      console.warn("handleNavigationFromData error:", err);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     const init = async () => {
@@ -54,7 +89,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
         fcmTokenRef.current = fcmToken;
 
-        await fetch("https://rider-app-testing.onrender.com/api/v1/rider/push-tokens", {
+        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -75,7 +110,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     return () => {
       mounted = false;
     };
-  }, [user?. _id, token]);
+  }, [user?._id, token]);
 
   useEffect(() => {
     if (user || token) return;
@@ -85,7 +120,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       if (!t) return;
 
       try {
-        await fetch("https://rider-app-testing.onrender.com/api/v1/rider/push-tokens", {
+        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",
@@ -103,7 +138,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     cleanup();
   }, [user, token]);
 
-  // Notification listeners: received (foreground) + response (tap)
+
   useEffect(() => {
     // foreground: show in-app toast + play sound
     const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
@@ -121,34 +156,35 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       }
     });
 
-    // response (user taps notification): deep-link to order if present
+    
     const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
       try {
+        if (handledInitialResponseRef.current) {
+        }
         const data = response.notification.request.content.data as any;
-        const orderId = data?.orderId ?? data?.order_id ?? data?.id;
 
-        const isPickup =data?.screen === "pickup" || data?.type === "pickup" || data?.target === "pickup" ||
-          Boolean(data?.pickupId) || Boolean(data?.pickup_id);
-
-        const pickupId = data?.pickupId ?? data?.pickup_id ?? orderId;
-
-        if (isPickup && pickupId) {
-          router.push(`/(rider)/order/pickup/${String(pickupId)}`);
-          return;
-        }
-        if (orderId) {
-          router.push(`/(rider)/order/delivered/${String(orderId)}`);
+        if (handledInitialResponseRef.current) {
           return;
         }
 
-        if (data?.deep_link) {
-          router.push(String(data.deep_link) as any);
-          return;
-        }
+        handleNavigationFromData(data);
       } catch (err) {
         console.warn("notification response handler error:", err);
       }
     });
+
+    (async () => {
+      try {
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        if (lastResponse) {
+          handledInitialResponseRef.current = true;
+          const data = lastResponse.notification.request.content.data as any;
+          handleNavigationFromData(data);
+        }
+      } catch (err) {
+        console.warn("Error checking initial notification response:", err);
+      }
+    })();
 
     return () => {
       receivedSub.remove();
@@ -159,7 +195,6 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   return (
     <NotificationContext.Provider value={{ notify, hide }}>
       {children}
-
 
       <InAppToast
         visible={visible}
@@ -174,9 +209,6 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
 export const useNotification = () => {
   const ctx = useContext(NotificationContext);
-  if (!ctx)
-    throw new Error(
-      "useNotification must be used inside NotificationProvider"
-    );
+  if (!ctx) throw new Error("useNotification must be used inside NotificationProvider");
   return ctx;
 };

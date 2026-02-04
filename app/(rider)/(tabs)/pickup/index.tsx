@@ -20,7 +20,7 @@ type Pickup = {
   Address: string;
 };
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1/rider";
+const API_URL = "https://api.drydash.in/api/v1/rider";
 
 /* ================= SCREEN ================= */
 
@@ -53,7 +53,7 @@ export default function Pickup() {
 
       setPickups((prev) => {
         const map = new Map(prev.map((p) => [p._id, p]));
-        (data.Pickups || []).forEach((p) => map.set(p._id, p));
+        (data.Pickups || []).forEach((p: Pickup) => map.set(p._id, p));
         return Array.from(map.values());
       });
     } finally {

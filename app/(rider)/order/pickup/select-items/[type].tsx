@@ -1,4 +1,6 @@
 import UniversalLoader from "@/components/Loader/UniversalLoader";
+import { productImages } from "@/constants/productImages";
+import { PRODUCTS } from "@/constants/products";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -11,6 +13,7 @@ import {
   Alert,
   Image,
   Keyboard,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -19,16 +22,13 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Linking,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../../../../../context/CartContext";
 import { useTheme } from "../../../../../context/ThemeContext";
 import { useAuth } from "../../../../../context/useAuth";
-import { PRODUCTS } from "@/constants/products";
-import { productImages } from "@/constants/productImages";
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1";
+const API_URL = "https://api.drydash.in/api/v1";
 
 const SERVICES = [
   { key: "laundry", label: "Laundry", icon: "shirt-outline" },

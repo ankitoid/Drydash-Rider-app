@@ -136,7 +136,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (!fcmToken) return;
 
         await fetch(
-          "https://rider-app-testing.onrender.com/api/v1/rider/push-tokens",
+          "https://api.drydash.in/api/v1/rider/push-tokens",
           {
             method: "POST",
             headers: {

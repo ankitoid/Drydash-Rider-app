@@ -5,17 +5,17 @@ import { useEffect, useState } from "react";
 import {
   Alert,
   Linking,
+  Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  Pressable,
-  Platform,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1";
+const API_URL = "https://api.drydash.in/api/v1";
 
 export default function PickupDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
