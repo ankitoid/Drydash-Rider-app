@@ -32,7 +32,7 @@ export default function Pickup() {
     completedOrderId?: string;
   }>();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   // const [pickups, setPickups] = useState<Pickup[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -42,31 +42,21 @@ export default function Pickup() {
   const getPickups = async () => {
     if (!user?.email) return;
 
-    setLoading(true);
+    setRefreshing(true); // ✅ not loading
     try {
       const res = await fetch(
         `${API_URL}/getriderpickups?email=${encodeURIComponent(user.email)}`,
-        {
-          method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-            "x-client-type": "mobile",
-          },
-        }
+        { headers: { "Content-Type": "application/json" } },
       );
 
-      const data = await res.json().catch(() => null);
+      const data = await res.json();
 
-      if (!res.ok) {
-        throw new Error((data && data.message) || "Failed to fetch pickups");
-      }
-
-      setPickups(Array.isArray(data.Pickups) ? data.Pickups : []);
-    } catch (error) {
-      console.error("Pickup fetch error:", error);
-      setPickups([]);
+      setPickups((prev) => {
+        const map = new Map(prev.map((p) => [p._id, p]));
+        (data.Pickups || []).forEach((p) => map.set(p._id, p));
+        return Array.from(map.values());
+      });
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   };
@@ -77,109 +67,109 @@ export default function Pickup() {
         setPickups((prev) => prev.filter((p) => p._id !== completedOrderId));
         router.setParams({ completedOrderId: undefined });
       }
+
       if (user?.email) {
         getPickups();
       }
-      return;
-    }, [user?.email, completedOrderId])
+    }, [user?.email, completedOrderId]),
   );
-// /* ---------- SOCKET: CONNECT + JOIN RIDER ROOM ---------- */
-// console.log("this is userrrr",user)
-// useEffect(() => {
-//   const riderId = user?._id;
 
-//   console.log("🟡 [SOCKET] useEffect triggered");
-//   console.log("🟡 [SOCKET] riderId =>", riderId);
+  // /* ---------- SOCKET: CONNECT + JOIN RIDER ROOM ---------- */
+  // console.log("this is userrrr",user)
+  // useEffect(() => {
+  //   const riderId = user?._id;
 
-//   if (!riderId) {
-//     console.log("🔴 [SOCKET] riderId missing, returning...");
-//     return;
-//   }
+  //   console.log("🟡 [SOCKET] useEffect triggered");
+  //   console.log("🟡 [SOCKET] riderId =>", riderId);
 
-//   console.log("🟡 [SOCKET] connecting socket...");
+  //   if (!riderId) {
+  //     console.log("🔴 [SOCKET] riderId missing, returning...");
+  //     return;
+  //   }
 
-//   // connect socket
-//   socket.connect();
+  //   console.log("🟡 [SOCKET] connecting socket...");
 
-//   // connection logs
-//   socket.on("connect", () => {
-//     console.log("✅ [SOCKET] connected successfully");
-//     console.log("✅ [SOCKET] socket.id =>", socket.id);
+  //   // connect socket
+  //   socket.connect();
 
-//     // join room
-//     console.log("🟢 [SOCKET] emitting joinRider with riderId:", riderId);
-//     socket.emit("joinRider", { riderId });
-//   });
+  //   // connection logs
+  //   socket.on("connect", () => {
+  //     console.log("✅ [SOCKET] connected successfully");
+  //     console.log("✅ [SOCKET] socket.id =>", socket.id);
 
-//   socket.on("connect_error", (err) => {
-//     console.log("❌ [SOCKET] connect_error =>", err?.message || err);
-//   });
+  //     // join room
+  //     console.log("🟢 [SOCKET] emitting joinRider with riderId:", riderId);
+  //     socket.emit("joinRider", { riderId });
+  //   });
 
-//   socket.on("disconnect", (reason) => {
-//     console.log("⚠️ [SOCKET] disconnected =>", reason);
-//   });
+  //   socket.on("connect_error", (err) => {
+  //     console.log("❌ [SOCKET] connect_error =>", err?.message || err);
+  //   });
 
-//   // listen realtime assignment
-//   socket.on("riderAssignedPickup", ({ pickup }) => {
-//     console.log("🔥 [SOCKET] riderAssignedPickup received");
-//     console.log("🔥 [SOCKET] pickup =>", pickup);
+  //   socket.on("disconnect", (reason) => {
+  //     console.log("⚠️ [SOCKET] disconnected =>", reason);
+  //   });
 
-//     setPickups((prev) => {
-//       const exists = prev.some((p) => p._id === pickup._id);
-//       if (exists) {
-//         console.log("🟠 [SOCKET] pickup already exists in list:", pickup._id);
-//         return prev;
-//       }
+  //   // listen realtime assignment
+  //   socket.on("riderAssignedPickup", ({ pickup }) => {
+  //     console.log("🔥 [SOCKET] riderAssignedPickup received");
+  //     console.log("🔥 [SOCKET] pickup =>", pickup);
 
-//       console.log("🟢 [SOCKET] adding new pickup to list:", pickup._id);
-//       return [pickup, ...prev];
-//     });
-//   });
+  //     setPickups((prev) => {
+  //       const exists = prev.some((p) => p._id === pickup._id);
+  //       if (exists) {
+  //         console.log("🟠 [SOCKET] pickup already exists in list:", pickup._id);
+  //         return prev;
+  //       }
 
-//   return () => {
-//     console.log("🧹 [SOCKET] cleanup running (removing listeners)");
+  //       console.log("🟢 [SOCKET] adding new pickup to list:", pickup._id);
+  //       return [pickup, ...prev];
+  //     });
+  //   });
 
-//     socket.off("connect");
-//     socket.off("connect_error");
-//     socket.off("disconnect");
-//     socket.off("riderAssignedPickup");
-//   };
-// }, [user?._id]);
+  //   return () => {
+  //     console.log("🧹 [SOCKET] cleanup running (removing listeners)");
 
-// /* ---------- SOCKET: HANDLE APP FOREGROUND ---------- */
-// useEffect(() => {
-//   console.log("🟡 [APPSTATE] listener added");
+  //     socket.off("connect");
+  //     socket.off("connect_error");
+  //     socket.off("disconnect");
+  //     socket.off("riderAssignedPickup");
+  //   };
+  // }, [user?._id]);
 
-//   const subscription = AppState.addEventListener("change", (state) => {
-//     console.log("🟣 [APPSTATE] state changed =>", state);
+  // /* ---------- SOCKET: HANDLE APP FOREGROUND ---------- */
+  // useEffect(() => {
+  //   console.log("🟡 [APPSTATE] listener added");
 
-//     if (state === "active") {
-//       const riderId = user?._id;
-//       console.log("🟣 [APPSTATE] app active, riderId =>", riderId);
+  //   const subscription = AppState.addEventListener("change", (state) => {
+  //     console.log("🟣 [APPSTATE] state changed =>", state);
 
-//       if (!riderId) {
-//         console.log("🔴 [APPSTATE] riderId missing, skipping socket reconnect");
-//         return;
-//       }
+  //     if (state === "active") {
+  //       const riderId = user?._id;
+  //       console.log("🟣 [APPSTATE] app active, riderId =>", riderId);
 
-//       console.log("🟣 [APPSTATE] socket.connected =>", socket.connected);
+  //       if (!riderId) {
+  //         console.log("🔴 [APPSTATE] riderId missing, skipping socket reconnect");
+  //         return;
+  //       }
 
-//       if (!socket.connected) {
-//         console.log("🟡 [APPSTATE] reconnecting socket...");
-//         socket.connect();
+  //       console.log("🟣 [APPSTATE] socket.connected =>", socket.connected);
 
-//         console.log("🟢 [APPSTATE] emitting joinRider again:", riderId);
-//         socket.emit("joinRider", { riderId });
-//       }
-//     }
-//   });
+  //       if (!socket.connected) {
+  //         console.log("🟡 [APPSTATE] reconnecting socket...");
+  //         socket.connect();
 
-//   return () => {
-//     console.log("🧹 [APPSTATE] listener removed");
-//     subscription.remove();
-//   };
-// }, [user?._id]);
+  //         console.log("🟢 [APPSTATE] emitting joinRider again:", riderId);
+  //         socket.emit("joinRider", { riderId });
+  //       }
+  //     }
+  //   });
 
+  //   return () => {
+  //     console.log("🧹 [APPSTATE] listener removed");
+  //     subscription.remove();
+  //   };
+  // }, [user?._id]);
 
   /* ---------- LOADING ---------- */
   if (loading) {
@@ -250,6 +240,17 @@ export default function Pickup() {
           <Text style={styles.badgeText}>{pickups.length}</Text>
         </View>
       </View>
+      {pickups.length === 0 && (
+        <View style={styles.emptyWrap}>
+          <Ionicons name="cube-outline" size={48} color={theme.subText} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            No pickups for now
+          </Text>
+          <Text style={[styles.emptySub, { color: theme.subText }]}>
+            You’re all caught up. New pickups will appear here when assigned.
+          </Text>
+        </View>
+      )}
 
       {pickups.map((item) => (
         <View key={item._id}>

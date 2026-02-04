@@ -8,14 +8,14 @@ import React, {
   useState,
 } from "react";
 
-import { registerForPushNotifications } from "@/services/pushNotifications";
 import { setupNotificationChannel } from "@/services/notificationSetup";
+import { registerForPushNotifications } from "@/services/pushNotifications";
 
 /* =====================================================
    CONFIG
 ===================================================== */
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1/auth";
+const API_URL = "https://api.drydash.in/api/v1/auth";
 
 const USER_KEY = "DRYDASH_RIDER_USER";
 const TOKEN_KEY = "DRYDASH_RIDER_TOKEN";
@@ -47,7 +47,7 @@ interface AuthContextType {
 ===================================================== */
 
 export const AuthContext = createContext<AuthContextType | undefined>(
-  undefined
+  undefined,
 );
 
 /* =====================================================
@@ -147,7 +147,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
               token: fcmToken,
               platform: "android",
             }),
-          }
+          },
         );
       } catch (err) {
         console.log("Push registration failed:", err);
@@ -189,12 +189,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       login,
       logout,
     }),
-    [user, token, isLoading]
+    [user, token, isLoading],
   );
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
