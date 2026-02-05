@@ -87,7 +87,7 @@ export class LocationService {
     });
 
     await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-      accuracy: Location.Accuracy.High,
+      accuracy: Location.Accuracy.Balanced,
       distanceInterval: this.distanceInterval,
       timeInterval: this.timeInterval,
       showsBackgroundLocationIndicator: true,

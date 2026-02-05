@@ -220,7 +220,7 @@ export default function SelectItems() {
         return null; // now strictly require location — don't return fallback
       }
       const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Highest,
+        accuracy: Location.Accuracy.Balanced,
       });
       const coords = {
         latitude: pos.coords.latitude,
