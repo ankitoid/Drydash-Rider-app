@@ -2,7 +2,7 @@ import { useRiderData } from "@/context/RiderDataContext";
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import {
     RefreshControl,
     ScrollView,
@@ -20,7 +20,7 @@ type Pickup = {
   Address: string;
 };
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1/rider";
+const API_URL = "https://api.drydash.in/api/v1/rider";
 
 /* ================= SCREEN ================= */
 
@@ -51,8 +51,8 @@ export default function Pickup() {
 
       const data = await res.json();
 
-      setPickups((prev) => {
-        const map = new Map(prev.map((p) => [p._id, p]));
+      setPickups((prev: any) => {
+        const map = new Map(prev.map((p: Pickup) => [p._id, p]));
         (data.Pickups || []).forEach((p: Pickup) => map.set(p._id, p));
         return Array.from(map.values());
       });
@@ -64,7 +64,7 @@ export default function Pickup() {
   useFocusEffect(
     useCallback(() => {
       if (completedOrderId) {
-        setPickups((prev) => prev.filter((p) => p._id !== completedOrderId));
+        setPickups((prev : any) => prev.filter((p : any) => p._id !== completedOrderId));
         router.setParams({ completedOrderId: undefined });
       }
 

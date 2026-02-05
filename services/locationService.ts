@@ -17,7 +17,7 @@ export class LocationService {
   private distanceInterval = 10;
   private timeInterval = 30000;
 
-  private constructor() { }
+  private constructor() {}
 
   static getInstance(): LocationService {
     if (!LocationService.instance) {
@@ -52,8 +52,12 @@ export class LocationService {
   }
 
   async checkPermissions(): Promise<PermissionState> {
-    const fg = await Location.requestForegroundPermissionsAsync();
-    if (fg.status !== "granted") return "denied";
+    let fg = await Location.getForegroundPermissionsAsync();
+    
+    if (fg.status !== "granted") {
+      fg = await Location.requestForegroundPermissionsAsync();
+      if (fg.status !== "granted") return "denied";
+    }
 
     const bg = await Location.getBackgroundPermissionsAsync();
     if (bg.status === "granted") return "background";
@@ -63,8 +67,21 @@ export class LocationService {
 
   /**
    * Call ONLY from a user action (button / alert)
+   * Ensures foreground permission is granted before requesting background
    */
   async requestBackgroundPermission(): Promise<boolean> {
+    // Ensure foreground is granted first
+    let fg = await Location.getForegroundPermissionsAsync();
+    
+    if (fg.status !== "granted") {
+      fg = await Location.requestForegroundPermissionsAsync();
+      if (fg.status !== "granted") {
+        console.warn("Foreground permission not granted, cannot request background");
+        return false;
+      }
+    }
+
+    // Now safe to request background
     const bg = await Location.requestBackgroundPermissionsAsync();
     return bg.status === "granted";
   }
@@ -72,11 +89,14 @@ export class LocationService {
   /* ---------------- TRACKING ---------------- */
 
   async startTracking(): Promise<void> {
-    if (this.isTracking) return;
+    if (this.isTracking) {
+      console.log("⚠️ Tracking already active");
+      return;
+    }
 
     const permissionState = await this.checkPermissions();
     if (permissionState !== "background") {
-      throw new Error("Background location not granted");
+      throw new Error(`Background location not granted (current state: ${permissionState})`);
     }
 
     try {
@@ -94,6 +114,7 @@ export class LocationService {
       await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
 
     if (alreadyRunning) {
+      console.log("⚠️ Background task already running");
       this.isTracking = true;
       return;
     }
@@ -120,13 +141,15 @@ export class LocationService {
         await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
       if (running) {
         await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+        console.log("✅ Background tracking stopped");
+      } else {
+        console.log("⚠️ Background tracking was not running");
       }
     } catch (e) {
       console.warn("stopTracking failed", e);
     }
 
     this.isTracking = false;
-    console.log("✅ Background tracking stopped");
   }
 
   isTrackingActive(): boolean {
@@ -195,9 +218,7 @@ export class LocationService {
         lat: location.coords.latitude,
         lng: location.coords.longitude,
       },
-      speed: location.coords.speed
-        ? location.coords.speed * 3.6
-        : 0,
+      speed: location.coords.speed ? location.coords.speed * 3.6 : 0,
       bearing: location.coords.heading ?? 0,
       batteryLevel: battery,
       status,

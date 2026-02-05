@@ -2,7 +2,7 @@ import { locationService } from "@/services/locationService";
 import { socket } from "@/services/socket";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
-import React, {
+import {
   createContext,
   useContext,
   useEffect,
@@ -40,7 +40,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   /* ---------------- START ---------------- */
 
   const startTracking = async (): Promise<void> => {
-    if (lockRef.current) return;
+    if (lockRef.current) {
+      console.log("⚠️ Start tracking already in progress");
+      return;
+    }
     lockRef.current = true;
 
     try {
@@ -52,20 +55,51 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       const permissionState = await locationService.checkPermissions();
 
       if (permissionState === "denied") {
-        setError("Location permission denied");
+        Alert.alert(
+          "Location Permission Required",
+          "DryDash needs location access to track deliveries. Please grant permission.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Grant Permission",
+              onPress: async () => {
+                // Retry after user acknowledges
+                const retry = await locationService.checkPermissions();
+                if (retry !== "denied") {
+                  // Release lock and try again
+                  lockRef.current = false;
+                  await startTracking();
+                } else {
+                  setError("Location permission denied");
+                }
+              },
+            },
+          ],
+        );
         return;
       }
 
       if (permissionState === "foreground") {
         Alert.alert(
-          "Allow background location",
-          "Please allow location access all the time for live tracking.",
+          "Background Location Needed",
+          "For continuous delivery tracking, please allow location access 'All the time' in the next screen.",
           [
             { text: "Cancel", style: "cancel" },
             {
-              text: "Open settings",
+              text: "Continue",
               onPress: async () => {
-                await locationService.requestBackgroundPermission();
+                const granted = await locationService.requestBackgroundPermission();
+                if (granted) {
+                  // Release lock and recursively call startTracking now that we have permission
+                  lockRef.current = false;
+                  await startTracking();
+                } else {
+                  setError("Background location permission denied");
+                  Alert.alert(
+                    "Permission Denied",
+                    "Background location is required for delivery tracking. You can enable it later in Settings.",
+                  );
+                }
               },
             },
           ],
@@ -74,6 +108,8 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // background granted ✅
+      console.log("✅ Background location permission granted, starting tracking...");
+
       await locationService.setCachedUser(user);
 
       await AsyncStorage.setItem(
@@ -102,14 +138,21 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("✅ Live tracking enabled");
     } catch (err) {
       console.error("❌ startTracking failed:", err);
-      setError("Failed to start tracking");
+      setError(err instanceof Error ? err.message : "Failed to start tracking");
+      Alert.alert(
+        "Tracking Error",
+        "Failed to start location tracking. Please try again.",
+      );
     } finally {
       lockRef.current = false;
     }
   };
 
   const stopTracking = async (): Promise<void> => {
-    if (lockRef.current) return;
+    if (lockRef.current) {
+      console.log("⚠️ Stop tracking already in progress");
+      return;
+    }
     lockRef.current = true;
 
     try {
@@ -128,7 +171,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("🛑 Live tracking stopped");
     } catch (err) {
       console.error("❌ stopTracking failed:", err);
-      setError("Failed to stop tracking");
+      setError(err instanceof Error ? err.message : "Failed to stop tracking");
     } finally {
       lockRef.current = false;
     }
@@ -138,7 +181,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const toggleTracking = async (): Promise<void> => {
     console.log("🔄 Toggling tracking...");
-    if (lockRef.current) return;
+    if (lockRef.current) {
+      console.log("⚠️ Operation already in progress");
+      return;
+    }
 
     if (trackingRef.current) {
       await stopTracking();

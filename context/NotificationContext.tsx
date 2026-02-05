@@ -6,7 +6,7 @@ import { playNotificationSound } from "@/services/notificationSound";
 import { registerForPushNotifications } from "@/services/pushNotifications";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 type NotifyPayload = {
   title: string;
@@ -89,7 +89,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
         fcmTokenRef.current = fcmToken;
 
-        await fetch("https://rider-app-testing.onrender.com/api/v1/rider/push-tokens", {
+        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -120,7 +120,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       if (!t) return;
 
       try {
-        await fetch("https://rider-app-testing.onrender.com/api/v1/rider/push-tokens", {
+        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",

@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, {
+import {
   createContext,
   ReactNode,
   useEffect,
@@ -15,7 +15,7 @@ import { registerForPushNotifications } from "@/services/pushNotifications";
    CONFIG
 ===================================================== */
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1/auth";
+const API_URL = "https://api.drydash.in/api/v1/auth";
 
 const USER_KEY = "DRYDASH_RIDER_USER";
 const TOKEN_KEY = "DRYDASH_RIDER_TOKEN";
@@ -136,7 +136,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (!fcmToken) return;
 
         await fetch(
-          "https://rider-app-testing.onrender.com/api/v1/rider/push-tokens",
+          "https://api.drydash.in/api/v1/rider/push-tokens",
           {
             method: "POST",
             headers: {
