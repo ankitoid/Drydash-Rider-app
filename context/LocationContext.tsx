@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { AppState, AppStateStatus } from "react-native";
+import { AppState, AppStateStatus, Alert } from "react-native";
 import { useAuth } from "./useAuth";
 
 interface LocationContextType {
@@ -27,6 +27,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user } = useAuth();
+
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const trackingRef = useRef(false);
   const lockRef = useRef(false);
@@ -36,45 +37,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     useState<Location.LocationObject | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const sendLocationUpdate = async (
-    location: Location.LocationObject,
-  ): Promise<void> => {
-    console.log("📍 Checking socket and user for location update...");
-    console.log("Socket connected:", socket.connected);
-    console.log("User ID:", user?._id);
-
-    if (!socket.connected || !user?._id) {
-      console.log("⚠️ Not sending update - socket or user missing");
-      return;
-    }
-
-    try {
-      const payload = await locationService.formatLocationForBackend(
-        location,
-        user._id,
-        user.name || "Unknown Rider",
-        user.phone || "N/A",
-        "active",
-      );
-
-      console.log("📍 Sending location update to server:", payload);
-      socket.emit("riderLocationUpdate", payload);
-      setLastLocation(location);
-      setError(null);
-
-      try {
-        await AsyncStorage.setItem(
-          "bg_status",
-          JSON.stringify({ lastSentTime: new Date().toISOString() }),
-        );
-      } catch (e) {
-        console.warn("Failed to persist bg_status", e);
-      }
-    } catch (err) {
-      console.error("❌ Failed to send location update:", err);
-      setError("Failed to send location update");
-    }
-  };
+  /* ---------------- START ---------------- */
 
   const startTracking = async (): Promise<void> => {
     if (lockRef.current) return;
@@ -86,13 +49,33 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
-      const granted = await locationService.requestPermissions();
-      if (!granted) {
-        setError("Location permission not granted");
+      const permissionState = await locationService.checkPermissions();
+
+      if (permissionState === "denied") {
+        setError("Location permission denied");
         return;
       }
 
-      locationService.setCachedUser(user);
+      if (permissionState === "foreground") {
+        Alert.alert(
+          "Allow background location",
+          "Please allow location access all the time for live tracking.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Open settings",
+              onPress: async () => {
+                await locationService.requestBackgroundPermission();
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      // background granted ✅
+      await locationService.setCachedUser(user);
+
       await AsyncStorage.setItem(
         "bg_user",
         JSON.stringify({
@@ -116,7 +99,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsTracking(true);
       setError(null);
 
-      console.log("✅ Live tracking enabled (background-safe)");
+      console.log("✅ Live tracking enabled");
     } catch (err) {
       console.error("❌ startTracking failed:", err);
       setError("Failed to start tracking");
@@ -142,7 +125,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         });
       }
 
-      console.log("🛑 Live tracking stopped by user");
+      console.log("🛑 Live tracking stopped");
     } catch (err) {
       console.error("❌ stopTracking failed:", err);
       setError("Failed to stop tracking");
@@ -151,12 +134,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /* ---------------- TOGGLE ---------------- */
+
   const toggleTracking = async (): Promise<void> => {
     console.log("🔄 Toggling tracking...");
-    if (lockRef.current) {
-      console.log("⏳ toggle blocked by lock");
-      return;
-    }
+    if (lockRef.current) return;
+
     if (trackingRef.current) {
       await stopTracking();
     } else {
@@ -164,30 +147,16 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /* ---------------- APP STATE ---------------- */
+
   useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
-      console.log("📱 App state changed:", nextState);
-
-      if (nextState === "active") {
-        console.log(
-          "📱 App came to foreground — observing only (no auto-start).",
-        );
-      } else {
-        console.log(
-          "📱 App going to",
-          nextState,
-          "- leaving tracking running as started by user.",
-        );
-      }
-
+      console.log("📱 App state:", nextState);
       appState.current = nextState;
     };
 
     const sub = AppState.addEventListener("change", handleAppStateChange);
-
-    return () => {
-      sub.remove();
-    };
+    return () => sub.remove();
   }, []);
 
   const value: LocationContextType = {
