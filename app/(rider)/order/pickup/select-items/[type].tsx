@@ -10,25 +10,25 @@ import * as Location from "expo-location"; // <-- new
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
-  Image,
-  Keyboard,
-  Linking,
-  Modal,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Image,
+    Keyboard,
+    Linking,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useCart } from "../../../../../context/CartContext";
 import { useTheme } from "../../../../../context/ThemeContext";
 import { useAuth } from "../../../../../context/useAuth";
 
-const API_URL = "https://api.drydash.in/api/v1";
+const API_URL = "https://rider-app-testing.onrender.com/api/v1";
 
 const SERVICES = [
   { key: "laundry", label: "Laundry", icon: "shirt-outline" },

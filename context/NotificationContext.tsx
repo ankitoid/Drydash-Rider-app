@@ -89,7 +89,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
         fcmTokenRef.current = fcmToken;
 
-        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
+        await fetch("https://rider-app-testing.onrender.com/api/v1/rider/push-tokens", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -120,7 +120,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       if (!t) return;
 
       try {
-        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
+        await fetch("https://rider-app-testing.onrender.com/api/v1/rider/push-tokens", {
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",

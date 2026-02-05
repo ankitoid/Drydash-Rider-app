@@ -7,20 +7,20 @@ import * as ImagePicker from "expo-image-picker";
 import moment from "moment";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  Dimensions,
-  FlatList,
-  Image,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    Dimensions,
+    FlatList,
+    Image,
+    Modal,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { Skeleton } from "../../../../components/ui/Skeleton";
 import { useTheme } from "../../../../context/ThemeContext";
@@ -30,8 +30,8 @@ const { width, height } = Dimensions.get("window");
 const CARD_WIDTH = width - 48;
 const H_CARD = Math.min(320, width * 0.85);
 
-const PICKUP_API_BASE = "https://api.drydash.in/api/v1/rider";
-const ORDERS_API_BASE = "https://api.drydash.in/api/v1";
+const PICKUP_API_BASE = "https://rider-app-testing.onrender.com/api/v1/rider";
+const ORDERS_API_BASE = "https://rider-app-testing.onrender.com/api/v1";
 
 type Order = {
   id: string;

@@ -5,14 +5,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Animated,
-  Easing,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Animated,
+    Easing,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -35,7 +35,7 @@ type Delivery = {
 };
 
 
-const API_URL = "https://api.drydash.in/api/v1";
+const API_URL = "https://rider-app-testing.onrender.com/api/v1";
 
 /* ================= SCREEN ================= */
 

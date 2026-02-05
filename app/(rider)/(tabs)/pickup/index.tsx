@@ -4,12 +4,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -20,7 +20,7 @@ type Pickup = {
   Address: string;
 };
 
-const API_URL = "https://api.drydash.in/api/v1/rider";
+const API_URL = "https://rider-app-testing.onrender.com/api/v1/rider";
 
 /* ================= SCREEN ================= */
 
