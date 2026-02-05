@@ -3,13 +3,67 @@ import { useRiderData } from "@/context/RiderDataContext";
 import { useAuth } from "@/context/useAuth";
 import { playNotificationSound } from "@/services/notificationSound";
 import { socket } from "@/services/socket";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { AppState } from "react-native";
 
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
   const { notify } = useNotification();
-  const { addPickupRealtime, addDeliveryRealtime } = useRiderData();
+  const { setPickups, setDeliveries } = useRiderData();
+  const API_URL = "https://api.drydash.in/api/v1/rider";
+  const API_URL_ORDER = "https://api.drydash.in/api/v1";
+
+
+  const getPickups = async () => {
+    if (!user?.email) return;
+
+    try {
+      const res = await fetch(
+        `${API_URL}/getriderpickups?email=${encodeURIComponent(user.email)}`,
+        { headers: { "Content-Type": "application/json" } },
+      );
+
+      const data = await res.json();
+      //   console.log("user ifo---> ", user)
+      //  console.log("data------------------------------------------>", data);
+      const filteredPickups = (data?.Pickups).filter((el: any) => el.riderName === user.name)
+      console.log("filteredPickups------------------------------------------>", filteredPickups);
+      setPickups([...filteredPickups]);
+    } finally {
+      // setRefreshing(false);
+    }
+  };
+
+  const getDelivery = async () => {
+    if (!user?.email) return;
+
+    try {
+      const res = await fetch(
+        `${API_URL_ORDER}/getOrdersByFilter?email=${encodeURIComponent(
+          user.email
+        )}&status=delivery+rider+assigned&limit=1000&page=1`,
+        { headers: { "Content-Type": "application/json" } },
+      );
+
+      const Orderdata = await res.json();
+      console.log("data------------------------------------------>", Orderdata);
+
+      const filteredOrders = (Orderdata?.orders).filter((el: any) => el.riderName === user.name)
+      console.log("filteredOrders------------------------------------------>", filteredOrders);
+      const mapOrder = filteredOrders.map((el: any) => {
+        return {
+          id: el?._id,
+          orderId: el?.order_id,
+          name: el?.customerName,
+          address:el?.address,
+        }
+      })
+      setDeliveries([...mapOrder])
+    } finally {
+      // setRefreshing(false);
+    }
+  };
+
 
   useEffect(() => {
     const riderId = user?._id;
@@ -23,23 +77,27 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         pickup,
       );
 
+      console.log("this is the socket ", socket.id)
+
       const shortId = pickup?._id
         ? pickup._id.slice(-5).toUpperCase()
         : "-----";
+      console.log("user==> ", user)
+      if (pickup.riderName === user.name) {
+        getPickups();
+        notify?.({
+          title: "New Pickup Assigned 🚀",
+          message: `Pickup ID: WZP-${shortId}`,
+          duration: 5000,
+        });
 
-      notify?.({
-        title: "New Pickup Assigned 🚀",
-        message: `Pickup ID: WZP-${shortId}`,
-        duration: 5000,
-      });
+        try {
+          await playNotificationSound?.();
+        } catch (e) {
+          console.warn("🔊 play sound failed", e);
+        }
 
-      try {
-        await playNotificationSound?.();
-      } catch (e) {
-        console.warn("🔊 play sound failed", e);
       }
-
-      addPickupRealtime?.(pickup);
     };
 
     let isMounted = true;
@@ -118,19 +176,20 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
           address: order.address,
         };
 
-        notify?.({
-          title: "New Delivery Assigned 📦",
-          message: `Order ID: ${mapped.orderId ?? mapped.id?.slice(-5)}`,
-          duration: 5000,
-        });
+        if (order.riderName === user.name) {
+          getDelivery();
+          notify?.({
+            title: "New Delivery Assigned 📦",
+            message: `Order ID: ${mapped.orderId ?? mapped.id?.slice(-5)}`,
+            duration: 5000,
+          });
 
-        try {
-          await playNotificationSound?.();
-        } catch (e) {
-          console.warn("🔊 play sound failed", e);
+          try {
+            await playNotificationSound?.();
+          } catch (e) {
+            console.warn("🔊 play sound failed", e);
+          }
         }
-
-        addDeliveryRealtime?.(mapped);
       } catch (err) {
         console.error("❌ Error handling assignOrder:", err);
       }
@@ -186,7 +245,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       // socket.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?._id]);
+  }, [user?._id, socket]);
 
   // Handle app foreground reconnect
   useEffect(() => {

@@ -3,7 +3,7 @@ import { useRiderData } from "@/context/RiderDataContext";
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
     Animated,
     Easing,
@@ -78,7 +78,7 @@ const [refreshing, setRefreshing] = useState(false);
 useEffect(() => {
   if (!completedOrderId) return;
 
-  setDeliveries((prev) => prev.filter((p) => p.id !== completedOrderId));
+  setDeliveries((prev:any) => prev.filter((p:any) => p.id !== completedOrderId));
   router.setParams({ completedOrderId: undefined });
 }, [completedOrderId]);
   

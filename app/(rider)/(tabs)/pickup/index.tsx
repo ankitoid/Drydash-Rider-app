@@ -4,12 +4,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useState } from "react";
 import {
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -51,11 +51,13 @@ export default function Pickup() {
 
       const data = await res.json();
 
-      setPickups((prev: any) => {
-        const map = new Map(prev.map((p: Pickup) => [p._id, p]));
-        (data.Pickups || []).forEach((p: Pickup) => map.set(p._id, p));
-        return Array.from(map.values());
-      });
+      setPickups([...data.Pickups.map((el: any) => {
+        return {
+          _id: el?._id,
+          Name: el?.Name,
+          Address: el.Address
+        }
+      })]);
     } finally {
       setRefreshing(false);
     }
@@ -64,7 +66,7 @@ export default function Pickup() {
   useFocusEffect(
     useCallback(() => {
       if (completedOrderId) {
-        setPickups((prev : any) => prev.filter((p : any) => p._id !== completedOrderId));
+        setPickups((prev: any) => prev.filter((p: any) => p?._id !== completedOrderId));
         router.setParams({ completedOrderId: undefined });
       }
 
@@ -74,7 +76,6 @@ export default function Pickup() {
     }, [user?.email, completedOrderId]),
   );
 
-  // /* ---------- SOCKET: CONNECT + JOIN RIDER ROOM ---------- */
   // console.log("this is userrrr",user)
   // useEffect(() => {
   //   const riderId = user?._id;
