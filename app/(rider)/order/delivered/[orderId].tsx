@@ -4,23 +4,26 @@ import ConfirmModal from "@/components/Modals/ConfirmModal";
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker, {
-    DateTimePickerAndroid,
+  DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
 import * as ImageManipulator from "expo-image-manipulator";
 import { SaveFormat } from "expo-image-manipulator";
 import { router, useLocalSearchParams } from "expo-router";
 import moment from "moment";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-    BackHandler,
-    Linking,
-    Modal,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  BackHandler,
+  Dimensions,
+  Image,
+  Linking,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  FlatList,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -65,6 +68,7 @@ interface OrderDetails {
   riderName: string;
   riderDate: string;
   rescheduledDate?: string | null;
+  intransitImage?: string[];
 }
 
 /* ===================== COMPONENT ===================== */
@@ -82,6 +86,10 @@ export default function DeliveredOrderDetails() {
   const [orderToReschedule, setOrderToReschedule] =
     useState<OrderDetails | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
+
+  // gallery state (NEW)
+  const [galleryVisible, setGalleryVisible] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
 
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
@@ -437,13 +445,18 @@ export default function DeliveredOrderDetails() {
         return true;
       }
 
+      if (galleryVisible) {
+        setGalleryVisible(false);
+        return true;
+      }
+
       router.back();
       return true;
     };
 
     const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => sub.remove();
-  }, [rescheduleVisible, showCamera, showConfirm]);
+  }, [rescheduleVisible, showCamera, showConfirm, galleryVisible]);
 
   // When CaptureImageModal returns a captured image URI, compress/manipulate it first
   const onImageCaptured = async (uri: string) => {
@@ -575,6 +588,22 @@ export default function DeliveredOrderDetails() {
   // formatted string like “-20%” or “0%”
   const discountLabel = `-${discountPercent}%`;
 
+  /* ===================== IMAGE GALLERY HELPERS (NEW) ===================== */
+
+  // Try a few common places where API might return images; include locally captured one too.
+  const gatherOrderImages = (): string[] => {
+    const imgs: string[] = [];
+    if (Array.isArray(order?.intransitImage) && order!.intransitImage!.length) {
+      imgs.push(...(order!.intransitImage || []));
+    }
+    // include local captured image if present and not the sentinel "uri"
+    if (deliveryImage && deliveryImage !== "uri") {
+      // put local captured image first
+      imgs.unshift(deliveryImage);
+    }
+    return imgs;
+  };
+
   /* ===================== UI ===================== */
 
   return (
@@ -623,9 +652,40 @@ export default function DeliveredOrderDetails() {
 
       {/* DELIVERY DETAILS */}
       <View style={[styles.card, { backgroundColor: theme.card }]}>
-        <Text style={[styles.cardTitle, { color: theme.text }]}>
-          Delivery Details
-        </Text>
+        <View style={[styles.heading, { backgroundColor: theme.card }]}>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>
+            Details
+          </Text>
+
+          {/* Make Images tappable to open gallery */}
+          <TouchableOpacity
+            onPress={() => {
+              const imgs = gatherOrderImages();
+              if (imgs.length === 0) {
+                // nothing to show — but still open to show "no images"
+                setGalleryIndex(0);
+                setGalleryVisible(true);
+                return;
+              }
+              setGalleryIndex(0);
+              setGalleryVisible(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.cardTitle2,
+                {
+                  color: theme.primaryDark,
+                  backgroundColor: theme.primarySoft,
+                  borderColor: theme.primary,
+                },
+              ]}
+            >
+              Images
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <DetailRow
           icon="person-outline"
@@ -748,6 +808,14 @@ export default function DeliveredOrderDetails() {
       </View>
 
       {/* Modals */}
+      {/* Image gallery modal (NEW) */}
+      <ImageGalleryModal
+        visible={galleryVisible}
+        images={gatherOrderImages()}
+        initialIndex={galleryIndex}
+        onClose={() => setGalleryVisible(false)}
+      />
+
       <CaptureImageModal
         visible={showCamera}
         onCancel={() => setShowCamera(false)}
@@ -781,6 +849,209 @@ export default function DeliveredOrderDetails() {
     </ScrollView>
   );
 }
+
+/* ===================== IMAGE GALLERY MODAL (NEW) ===================== */
+
+function ImageGalleryModal({
+  visible,
+  images,
+  initialIndex = 0,
+  onClose,
+}: {
+  visible: boolean;
+  images: string[];
+  initialIndex?: number;
+  onClose: () => void;
+}) {
+  const flatRef = useRef<FlatList<any> | null>(null);
+  const thumbsRef = useRef<FlatList<any> | null>(null);
+  const [index, setIndex] = useState(initialIndex);
+  const [loaded, setLoaded] = useState<boolean[]>([]);
+
+  useEffect(() => {
+    if (visible) {
+      setIndex(initialIndex || 0);
+      setLoaded(images.map(() => false));
+      // small delay so modal mounts before scrolling
+      setTimeout(() => {
+        if (flatRef.current && typeof initialIndex === "number") {
+          try {
+            flatRef.current.scrollToIndex({ index: initialIndex, animated: false });
+          } catch {
+            /* ignore if index out of range */
+          }
+        }
+      }, 40);
+    }
+  }, [visible, initialIndex, images]);
+
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems && viewableItems.length) {
+      const idx = viewableItems[0].index ?? 0;
+      setIndex(idx);
+      // try to keep thumbnail centered
+      if (thumbsRef.current) {
+        try {
+          thumbsRef.current.scrollToIndex({
+            index: Math.max(0, idx - 1),
+            animated: true,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+
+  const window = Dimensions.get("window");
+  const modalHeight = Math.round(window.height * 0.8);
+  const imageAreaHeight = modalHeight - 140; // leave space for header + thumbs
+
+  const renderMainItem = ({ item, index: i }: { item: string; index: number }) => (
+    <View style={{ width: window.width, alignItems: "center", justifyContent: "center" }}>
+      <View
+        style={{
+          width: window.width * 0.95,
+          height: imageAreaHeight,
+          borderRadius: 12,
+          overflow: "hidden",
+          backgroundColor: "#000",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        {!loaded[i] && (
+          <View style={{ position: "absolute", zIndex: 2 }}>
+            <Text style={{ color: "#fff", fontWeight: "700" }}>Loading…</Text>
+          </View>
+        )}
+
+        <Image
+          source={{ uri: item }}
+          style={{
+            width: "100%",
+            height: "100%",
+            resizeMode: "contain",
+            backgroundColor: "#000",
+          }}
+          onLoadEnd={() => {
+            setLoaded((prev) => {
+              const copy = prev.slice();
+              copy[i] = true;
+              return copy;
+            });
+          }}
+        />
+      </View>
+    </View>
+  );
+
+  const renderThumb = ({ item, index: i }: { item: string; index: number }) => (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={() => {
+        setIndex(i);
+        if (flatRef.current) {
+          try {
+            flatRef.current.scrollToIndex({ index: i, animated: true });
+          } catch {
+            /* ignore */
+          }
+        }
+      }}
+      style={{
+        marginHorizontal: 6,
+        borderRadius: 8,
+        overflow: "hidden",
+        borderWidth: i === index ? 2 : 0,
+        borderColor: i === index ? "#ffffff" : "transparent",
+      }}
+    >
+      <Image
+        source={{ uri: item }}
+        style={{
+          width: 64,
+          height: 64,
+          resizeMode: "cover",
+          backgroundColor: "#111",
+        }}
+      />
+    </TouchableOpacity>
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={modalStyles.backdrop}>
+        <View style={[modalStyles.gallerySheet, { height: modalHeight }]}>
+          <View style={modalStyles.galleryHeader}>
+            <Text style={modalStyles.title}>Images</Text>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={{ color: "#6B7280", marginRight: 12, fontWeight: "700" }}>
+                {images && images.length ? `${index + 1} / ${images.length}` : "0 / 0"}
+              </Text>
+
+              <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
+                <Ionicons name="close" size={22} color="#374151" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {images && images.length > 0 ? (
+            <>
+              <FlatList
+                ref={flatRef}
+                data={images}
+                keyExtractor={(_, i) => String(i)}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                renderItem={renderMainItem}
+                onViewableItemsChanged={onViewableItemsChanged}
+                viewabilityConfig={viewabilityConfig}
+                initialNumToRender={1}
+                windowSize={2}
+                maxToRenderPerBatch={1}
+              />
+
+              {/* dot indicators */}
+              <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 8 }}>
+                {images.map((_, i) => (
+                  <View
+                    key={i}
+                    style={[
+                      modalStyles.dot,
+                      i === index ? modalStyles.dotActive : undefined,
+                    ]}
+                  />
+                ))}
+              </View>
+
+              {/* thumbnail strip */}
+              <View style={{ marginTop: 12 }}>
+                <FlatList
+                  ref={thumbsRef}
+                  data={images}
+                  keyExtractor={(_, i) => String(i)}
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  renderItem={renderThumb}
+                  contentContainerStyle={{ paddingHorizontal: 12 }}
+                />
+              </View>
+            </>
+          ) : (
+            <View style={{ padding: 24, alignItems: "center" }}>
+              <Text style={{ color: "#6B7280" }}>No images available</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 
 /* ===================== RESCHEDULE MODAL (RN) ===================== */
 
@@ -1084,6 +1355,28 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   cardTitle: { fontSize: 16, fontWeight: "900", marginBottom: 12 },
+  cardTitle2: {
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+
+    borderRadius: 999,
+    borderWidth: 1,
+
+    alignSelf: "flex-start",
+  },
+
+  heading: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingRight: 8,
+  },
 
   detailRow: {
     flexDirection: "row",
@@ -1281,5 +1574,37 @@ const modalStyles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     gap: 6,
+  },
+
+  /* Gallery specific */
+  /* Add / replace these fields inside your modalStyles object */
+  gallerySheet: {
+    backgroundColor: "#0B0B0C",
+    paddingTop: 12,
+    paddingHorizontal: 12,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    // darker sheet so images pop
+  },
+  galleryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+    paddingHorizontal: 4,
+  },
+  galleryFooter: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 8,
+    backgroundColor: "#94A3B8",
+    marginHorizontal: 4,
+  },
+  dotActive: {
+    backgroundColor: "#ffffff",
   },
 });
