@@ -1,21 +1,26 @@
 import { useAuth } from "@/context/useAuth";
 import { Ionicons } from "@expo/vector-icons";
+import { Audio } from "expo-av";
+import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-    Alert,
-    Linking,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
-const API_URL = "https://api.drydash.in/api/v1";
+// const API_URL = "https://api.drydash.in/api/v1";
+const API_URL = "https://rider-app-testing.onrender.com/api/v1";
 
 export default function PickupDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
@@ -37,6 +42,17 @@ export default function PickupDetails() {
   const [cancelHover, setCancelHover] = useState(false);
   const [navigateHover, setNavigateHover] = useState(false);
 
+  const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [cancelNote, setCancelNote] = useState("");
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [recordedUri, setRecordedUri] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+
+  // audio playback refs/state
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+
   const getPickup = async () => {
     setLoading(true);
     try {
@@ -48,62 +64,234 @@ export default function PickupDetails() {
         },
       });
 
-      const data = await res.json();
-      setPickup(data.data);
-      setLoading(false);
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.message || "Failed to send OTP");
+        throw new Error(data.message || `Failed to load pickup (${res.status})`);
       }
-    } catch (error) {
+
+      setPickup(data.data || { Name: "", Address: "", Contact: "" });
+    } catch (error: any) {
+      Alert.alert("Error", error?.message || "Failed to load pickup");
+    } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    getPickup();
+    if (orderId) getPickup();
+
+    return () => {
+      // stop active recording safely
+      if (recording) {
+        recording.stopAndUnloadAsync().catch(() => { });
+      }
+      // unload sound if any
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => { });
+        soundRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
   const handleCancel = () => {
-    Alert.alert(
-      "Cancel pickup",
-      "Are you sure you want to cancel this pickup?",
-      [
-        { text: "No", style: "cancel" },
-        { text: "Yes", onPress: () => cancelPickup() },
-      ],
-      { cancelable: true }
-    );
+    setCancelModalVisible(true);
   };
 
-  const cancelPickup = async () => {
+  // Recording functions
+  async function startRecording() {
+    try {
+      // clear previous recording to indicate new one is being recorded (optional)
+      if (recordedUri) {
+        // keep it, but clear UI so user knows new recording will replace it
+        setRecordedUri(null);
+      }
+
+      const permission = await Audio.requestPermissionsAsync?.();
+      const granted = (permission as any)?.granted || (permission as any)?.status === "granted";
+      if (!granted) {
+        Alert.alert(
+          "Permission required",
+          "Microphone permission is needed to record voice."
+        );
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const options =
+        (Audio as any).RECORDING_OPTIONS_PRESET_HIGH_QUALITY ||
+        (Audio as any).RecordingOptionsPresets?.HIGH_QUALITY;
+      const { recording: rec } = await Audio.Recording.createAsync(
+        options
+      );
+      setRecording(rec);
+      setIsRecording(true);
+    } catch (err) {
+      Alert.alert("Recording failed", "Could not start recording.");
+    }
+  }
+
+  async function stopRecording() {
+    if (!recording) return;
+    setIsRecording(false);
+    try {
+      await recording.stopAndUnloadAsync();
+    } catch (e) {
+      // ignore stop errors
+    }
+    const uri = recording.getURI();
+    setRecordedUri(uri);
+    setRecording(null);
+  }
+
+  // play/pause toggle
+  const togglePlayPause = async () => {
+    if (!recordedUri) return;
+
+    try {
+      // if we already have a sound created
+      if (soundRef.current) {
+        const status = await soundRef.current.getStatusAsync();
+        if (status.isLoaded) {
+          if (status.isPlaying) {
+            await soundRef.current.pauseAsync();
+            setIsPlaying(false);
+            return;
+          } else {
+            await soundRef.current.playAsync();
+            setIsPlaying(true);
+            return;
+          }
+        } else {
+          // not loaded - unload and recreate
+          await soundRef.current.unloadAsync().catch(() => { });
+          soundRef.current = null;
+        }
+      }
+
+      // create new sound and play
+      const { sound } = await Audio.Sound.createAsync({ uri: recordedUri });
+      soundRef.current = sound;
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status) return;
+        if (status.isLoaded) {
+          setIsPlaying(status.isPlaying ?? false);
+          if (status.didJustFinish) {
+            // finished
+            setIsPlaying(false);
+            // unload to free resources
+            sound.unloadAsync().catch(() => { });
+            soundRef.current = null;
+          }
+        } else {
+          setIsPlaying(false);
+        }
+      });
+      await sound.playAsync();
+      setIsPlaying(true);
+    } catch (e) {
+      Alert.alert("Playback error", "Unable to play/pause recording.");
+      setIsPlaying(false);
+    }
+  };
+
+  const removeRecording = async () => {
+    if (!recordedUri) return;
+    try {
+      if (soundRef.current) {
+        try {
+          const st = await soundRef.current.getStatusAsync();
+          if (st.isLoaded) {
+            await soundRef.current.stopAsync().catch(() => { });
+          }
+        } catch { }
+        await soundRef.current.unloadAsync().catch(() => { });
+        soundRef.current = null;
+      }
+      try {
+        await FileSystem.deleteAsync(recordedUri, { idempotent: true });
+      } catch (e) {
+      }
+    } catch (e) {
+      // ignore
+    } finally {
+      setRecordedUri(null);
+      setIsPlaying(false);
+    }
+  };
+
+  const cancelPickup = async (note: string, voiceUri: string | null) => {
     if (!orderId) {
       Alert.alert("Error", "Missing order id");
       return;
     }
 
-    setCancelling(true);
+    if (!user?.name || !user?.role) {
+      Alert.alert("Error", "User information missing. Please log in again.");
+      return;
+    }
+
+    setIsSubmittingCancel(true);
     try {
+      const formData = new FormData();
+      if (note) formData.append("note", note);
+      if (voiceUri) {
+        const fileInfo = await FileSystem.getInfoAsync(voiceUri);
+        if (fileInfo.exists) {
+          const filename = voiceUri.split("/").pop() || "recording.m4a";
+          formData.append("voice", {
+            uri: voiceUri,
+            type: "audio/m4a",
+            name: filename,
+          } as any);
+        }
+      }
+
+      formData.append("userName", user.name);
+      formData.append("userRole", user.role);
+
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "x-client-type": "mobile",
+      };
+
       const res = await fetch(`${API_URL}/deletePickup/${orderId}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
+        body: formData,
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data?.message || "Failed to cancel pickup");
+        throw new Error(data?.message || `Failed to cancel pickup (${res.status})`);
       }
 
       Alert.alert("Success", data?.message || "Pickup cancelled");
-      // go back to previous screen (same behavior as web where you remove from list)
+
+      // Reset modal state
+      setCancelModalVisible(false);
+      setCancelNote("");
+      setRecordedUri(null);
+      setIsRecording(false);
+      if (recording) {
+        try { await recording.stopAndUnloadAsync(); } catch { }
+        setRecording(null);
+      }
+      if (soundRef.current) {
+        try { await soundRef.current.unloadAsync(); } catch { }
+        soundRef.current = null;
+      }
+      setIsPlaying(false);
+
       router.back();
     } catch (err: any) {
       Alert.alert("Error", err?.message || "Failed to cancel pickup");
     } finally {
-      setCancelling(false);
+      setIsSubmittingCancel(false);
     }
   };
 
@@ -142,7 +330,6 @@ export default function PickupDetails() {
       webUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
     } else if (pickup.Address) {
       const q = encodeURIComponent(pickup.Address);
-
       nativeUrl = `https://www.google.com/maps/search/?api=1&query=${q}`;
       webUrl = nativeUrl;
     } else {
@@ -155,7 +342,6 @@ export default function PickupDetails() {
       if (canOpen) {
         await Linking.openURL(nativeUrl);
       } else {
-
         await Linking.openURL(webUrl);
       }
     } catch (err) {
@@ -167,8 +353,6 @@ export default function PickupDetails() {
       }
     }
   };
-
-  console.log("data:", pickup);
 
   /* ---------- SKELETON ---------- */
 
@@ -203,6 +387,9 @@ export default function PickupDetails() {
 
   const isNavigateDisabled =
     !pickup?.Address && !(pickup as any)?.latitude && !(pickup as any)?.longitude;
+
+  const isCancelDisabled =
+    (!cancelNote.trim() && !recordedUri) || isSubmittingCancel;
 
   return (
     <ScrollView
@@ -288,7 +475,6 @@ export default function PickupDetails() {
           <Text style={styles.navigateText}>Navigate</Text>
         </Pressable>
 
-        {/* minimal change: wire up cancel button */}
         <Pressable
           onHoverIn={() => setCancelHover(true)}
           onHoverOut={() => setCancelHover(false)}
@@ -361,6 +547,122 @@ export default function PickupDetails() {
           <Text style={[styles.itemText, { color: theme.text }]}>Dry-Clean</Text>
         </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={cancelModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCancelModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              Cancel Pickup
+            </Text>
+
+            <TextInput
+              style={[
+                styles.noteInput,
+                { color: theme.text, borderColor: theme.border },
+              ]}
+              placeholder="Enter reason OR record voice (one required)"
+              placeholderTextColor={theme.subText}
+              value={cancelNote}
+              onChangeText={setCancelNote}
+              multiline
+              numberOfLines={3}
+            />
+
+            <View style={styles.voiceRow}>
+              <TouchableOpacity
+                style={[styles.voiceBtn, { backgroundColor: theme.primary }]}
+                onPress={isRecording ? stopRecording : startRecording}
+                disabled={isSubmittingCancel}
+              >
+                <Ionicons
+                  name={isRecording ? "stop-circle" : "mic"}
+                  size={20}
+                  color="#000"
+                />
+                <Text style={styles.voiceBtnText}>
+                  {isRecording ? "Stop" : "Record"}
+                </Text>
+              </TouchableOpacity>
+
+              {recordedUri && !isRecording && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.playBtn, { backgroundColor: theme.primary }]}
+                    onPress={togglePlayPause}
+                  >
+                    <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#000" />
+                    <Text style={styles.voiceBtnText}>
+                      {isPlaying ? "Pause" : "Play"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.playBtn,
+                      { backgroundColor: theme.danger, marginLeft: 8 },
+                    ]}
+                    onPress={removeRecording}
+                  >
+                    <Ionicons name="trash" size={18} color="#fff" />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+
+            {/* Validation hint */}
+            {!cancelNote.trim() && !recordedUri && (
+              <Text style={{ color: theme.danger, fontSize: 12, marginBottom: 8 }}>
+                Add a note or record a voice message to cancel the pickup.
+              </Text>
+            )}
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: theme.danger }]}
+                onPress={async () => {
+                  // safe stop on close
+                  try {
+                    if (recording) await recording.stopAndUnloadAsync();
+                  } catch { }
+                  // unload sound if any
+                  try {
+                    if (soundRef.current) {
+                      await soundRef.current.unloadAsync();
+                      soundRef.current = null;
+                    }
+                  } catch { }
+                  setRecording(null);
+                  setIsRecording(false);
+                  setIsPlaying(false);
+                  setCancelModalVisible(false);
+                }}
+                disabled={isSubmittingCancel}
+              >
+                <Text style={styles.modalBtnText}>Close</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalBtn,
+                  { backgroundColor: theme.primary },
+                  isCancelDisabled && { opacity: 0.5 },
+                ]}
+                onPress={() => cancelPickup(cancelNote.trim(), recordedUri)}
+                disabled={isCancelDisabled}
+              >
+                <Text style={styles.modalBtnText}>
+                  {isSubmittingCancel ? "Cancelling..." : "Confirm Cancel"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -389,60 +691,6 @@ function DetailRow({
         ) : null}
         <Text style={[styles.detailValue, { color: theme.text }]}>{value}</Text>
       </View>
-    </View>
-  );
-}
-
-function ItemCard({
-  label,
-  icon,
-  theme,
-}: {
-  label: string;
-  icon: any;
-  theme: any;
-}) {
-  return (
-    <View style={[styles.itemCard, { backgroundColor: theme.card }]}>
-      <Ionicons name={icon} size={22} color={theme.primary} />
-      <Text style={[styles.itemText, { color: theme.text }]}>{label}</Text>
-    </View>
-  );
-}
-
-function SummaryRow({
-  label,
-  price,
-  theme,
-  bold,
-  green,
-}: {
-  label: string;
-  price: string;
-  theme: any;
-  bold?: boolean;
-  green?: boolean;
-}) {
-  return (
-    <View style={styles.summaryRow}>
-      <Text
-        style={[
-          styles.summaryLabel,
-          { color: theme.text },
-          bold && { fontWeight: "900" },
-        ]}
-      >
-        {label}
-      </Text>
-      <Text
-        style={[
-          styles.summaryPrice,
-          green && { color: "#22C55E" },
-          bold && { fontWeight: "900" },
-        ]}
-      >
-        {price}
-      </Text>
     </View>
   );
 }
@@ -618,5 +866,72 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "700",
     fontSize: 14,
+  },
+
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalContent: {
+    width: "90%",
+    borderRadius: 20,
+    padding: 20,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 16,
+  },
+  noteInput: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    fontSize: 14,
+    textAlignVertical: "top",
+    marginBottom: 16,
+  },
+  voiceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  voiceBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 30,
+    marginRight: 10,
+    gap: 6,
+  },
+  playBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 30,
+    gap: 6,
+  },
+  voiceBtnText: {
+    fontWeight: "700",
+    color: "#000",
+  },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 12,
+  },
+  modalBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  modalBtnText: {
+    fontWeight: "700",
+    color: "#000",
   },
 });
