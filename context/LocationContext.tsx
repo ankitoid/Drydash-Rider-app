@@ -2,14 +2,8 @@ import { locationService } from "@/services/locationService";
 import { socket } from "@/services/socket";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { AppState, AppStateStatus, Alert } from "react-native";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { Alert, AppState, AppStateStatus } from "react-native";
 import { useAuth } from "./useAuth";
 
 interface LocationContextType {
@@ -38,6 +32,25 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [error, setError] = useState<string | null>(null);
 
   /* ---------------- START ---------------- */
+
+  useEffect(() => {
+    const watchLocation = async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") return;
+
+      await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10,
+        },
+        (location) => {
+          setLastLocation(location);
+        },
+      );
+    };
+
+    watchLocation();
+  }, []);
 
   const startTracking = async (): Promise<void> => {
     if (lockRef.current) {
@@ -88,7 +101,8 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
             {
               text: "Continue",
               onPress: async () => {
-                const granted = await locationService.requestBackgroundPermission();
+                const granted =
+                  await locationService.requestBackgroundPermission();
                 if (granted) {
                   // Release lock and recursively call startTracking now that we have permission
                   lockRef.current = false;
@@ -108,7 +122,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       // background granted ✅
-      console.log("✅ Background location permission granted, starting tracking...");
+      console.log(
+        "✅ Background location permission granted, starting tracking...",
+      );
 
       await locationService.setCachedUser(user);
 

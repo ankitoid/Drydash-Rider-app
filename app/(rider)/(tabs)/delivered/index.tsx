@@ -1,8 +1,8 @@
 // app/(rider)/(tabs)/delivered/index.tsx
+import { useLocation } from "@/context/LocationContext";
 import { useRiderData } from "@/context/RiderDataContext";
 import { useAuth } from "@/context/useAuth";
 import { getBatchDistances } from "@/services/distanceService";
-import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -17,7 +17,6 @@ import {
   View,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
-
 /* ================= TYPES ================= */
 
 // type Pickup = {
@@ -68,74 +67,81 @@ export default function Pickup() {
 
   const [distanceMap, setDistanceMap] = useState<Record<string, number>>({});
 
+  const { lastLocation } = useLocation();
+
   useEffect(() => {
-    socket.on("riderLocationUpdate", (data) => {
-      if (!data?.lat || !data?.lng) return;
+    if (!lastLocation) return;
 
-      setRiderLocation({
-        lat: data.lat,
-        lng: data.lng,
-      });
-    });
-
-    return () => {
-      socket.off("riderLocationUpdate");
+    const coords = {
+      lat: lastLocation.coords.latitude,
+      lng: lastLocation.coords.longitude,
     };
-  }, []);
 
-useEffect(() => {
-  if (!riderLocation) {
-    console.log("❌ No riderLocation");
-    return;
-  }
+    console.log("📍 Rider GPS location:", coords);
 
-  if (deliveries.length === 0) {
-    console.log("❌ No deliveries");
-    return;
-  }
+    setRiderLocation(coords);
+  }, [lastLocation]);
 
-  const calculateDistances = async () => {
-    const destinations = deliveries
-      .filter((d) => d.lat && d.lng)
-      .map((d) => ({
-        id: d.id,
-        lat: d.lat,
-        lng: d.lng,
-      }));
-
-    console.log("📍 Rider location:", riderLocation);
-    console.log("📦 Destinations:", destinations);
-
-    if (destinations.length === 0) {
-      console.log("❌ No valid destinations");
+  useEffect(() => {
+    if (!riderLocation) {
+      console.log("❌ No riderLocation");
       return;
     }
 
-    const results = await getBatchDistances(riderLocation, destinations);
+    if (deliveries.length === 0) {
+      console.log("❌ No deliveries");
+      return;
+    }
 
-    console.log("📏 Distance results:", results);
+    const calculateDistances = async () => {
+      const destinations = deliveries
+        .filter((d) => d.lat && d.lng)
+        .map((d) => ({
+          id: d.id,
+          lat: d.lat,
+          lng: d.lng,
+        }));
 
-    const map: Record<string, number> = {};
+      console.log("📍 Rider location:", riderLocation);
+      console.log("📦 Destinations:", destinations);
 
-    results?.forEach((r: any) => {
-      map[r.id] = r.distance;
-    });
+      if (destinations.length === 0) {
+        console.log("❌ No valid destinations");
+        return;
+      }
 
-    console.log("🗺 Distance map:", map);
+      const results = await getBatchDistances(riderLocation, destinations);
 
-    setDistanceMap(map);
-  };
+      console.log("📏 Distance results:", results);
 
-  calculateDistances();
-}, [riderLocation, deliveries]);
+      const map: Record<string, number> = {};
+
+      results?.forEach((r: any) => {
+        map[r.id] = r.distance;
+      });
+
+      console.log("🗺 Distance map:", map);
+
+      setDistanceMap(map);
+    };
+
+    calculateDistances();
+  }, [riderLocation, deliveries]);
+
+  const sortedDeliveries = [...deliveries].sort((a, b) => {
+    const distA = distanceMap[a.id] ?? Infinity;
+    const distB = distanceMap[b.id] ?? Infinity;
+
+    return distA - distB;
+  });
 
   useEffect(() => {
     // whenever deliveries list changes, ensure animation arrays are same length
-    itemOpacity.current = deliveries.map(
+    itemOpacity.current = sortedDeliveries.map(
       (_, i) => itemOpacity.current[i] || new Animated.Value(1),
     );
 
-    itemTranslate.current = deliveries.map(
+    itemTranslate.current = sortedDeliveries.map(
       (_, i) => itemTranslate.current[i] || new Animated.Value(0),
     );
   }, [deliveries.length]);
@@ -388,7 +394,7 @@ useEffect(() => {
         </View>
       </Animated.View>
 
-      {deliveries.map((p, i) => (
+      {sortedDeliveries.map((p, i) => (
         <Animated.View
           key={p.id}
           style={{
@@ -446,7 +452,7 @@ useEffect(() => {
                     fontWeight: "600",
                   }}
                 >
-                  {distanceMap[p.id]
+                  {distanceMap[p.id] !== undefined
                     ? `${distanceMap[p.id].toFixed(2)} km away`
                     : "Calculating..."}
                 </Text>
