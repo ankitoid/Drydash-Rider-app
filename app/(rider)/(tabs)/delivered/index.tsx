@@ -1,18 +1,20 @@
 // app/(rider)/(tabs)/delivered/index.tsx
 import { useRiderData } from "@/context/RiderDataContext";
 import { useAuth } from "@/context/useAuth";
+import { getBatchDistances } from "@/services/distanceService";
+import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-    Animated,
-    Easing,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Easing,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -32,8 +34,9 @@ type Delivery = {
   phone: string;
   name: string;
   address: string;
+  lat: number;
+  lng: number;
 };
-
 
 const API_URL = "https://api.drydash.in/api/v1";
 
@@ -43,13 +46,12 @@ export default function Pickup() {
   const { theme } = useTheme();
   const { user, token } = useAuth();
 
+  const [loading, setLoading] = useState(true);
 
-const [loading, setLoading] = useState(true);
+  // use global deliveries from RiderDataContext
+  const { deliveries, setDeliveries } = useRiderData();
 
-// use global deliveries from RiderDataContext
-const { deliveries, setDeliveries } = useRiderData();
-
-const [refreshing, setRefreshing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   /* page animation */
   const pageOpacity = useRef(new Animated.Value(0)).current;
@@ -57,61 +59,125 @@ const [refreshing, setRefreshing] = useState(false);
 
   /* list animations */
   const itemOpacity = useRef<Animated.Value[]>([]);
-  const itemTranslate = useRef<Animated.Value[]>([]);  
+  const itemTranslate = useRef<Animated.Value[]>([]);
+
+  const [riderLocation, setRiderLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+
+  const [distanceMap, setDistanceMap] = useState<Record<string, number>>({});
 
   useEffect(() => {
-  // whenever deliveries list changes, ensure animation arrays are same length
-  itemOpacity.current = deliveries.map(
-    (_, i) => itemOpacity.current[i] || new Animated.Value(1)
-  );
+    socket.on("riderLocationUpdate", (data) => {
+      if (!data?.lat || !data?.lng) return;
 
-  itemTranslate.current = deliveries.map(
-    (_, i) => itemTranslate.current[i] || new Animated.Value(0)
-  );
-}, [deliveries.length]);
+      setRiderLocation({
+        lat: data.lat,
+        lng: data.lng,
+      });
+    });
 
-  const { completedOrderId } = useLocalSearchParams<{
-  completedOrderId?: string;
-}>();
-
+    return () => {
+      socket.off("riderLocationUpdate");
+    };
+  }, []);
 
 useEffect(() => {
-  if (!completedOrderId) return;
+  if (!riderLocation) {
+    console.log("❌ No riderLocation");
+    return;
+  }
 
-  setDeliveries((prev:any) => prev.filter((p:any) => p.id !== completedOrderId));
-  router.setParams({ completedOrderId: undefined });
-}, [completedOrderId]);
-  
+  if (deliveries.length === 0) {
+    console.log("❌ No deliveries");
+    return;
+  }
 
+  const calculateDistances = async () => {
+    const destinations = deliveries
+      .filter((d) => d.lat && d.lng)
+      .map((d) => ({
+        id: d.id,
+        lat: d.lat,
+        lng: d.lng,
+      }));
 
-  
-  
+    console.log("📍 Rider location:", riderLocation);
+    console.log("📦 Destinations:", destinations);
+
+    if (destinations.length === 0) {
+      console.log("❌ No valid destinations");
+      return;
+    }
+
+    const results = await getBatchDistances(riderLocation, destinations);
+
+    console.log("📏 Distance results:", results);
+
+    const map: Record<string, number> = {};
+
+    results?.forEach((r: any) => {
+      map[r.id] = r.distance;
+    });
+
+    console.log("🗺 Distance map:", map);
+
+    setDistanceMap(map);
+  };
+
+  calculateDistances();
+}, [riderLocation, deliveries]);
+
+  useEffect(() => {
+    // whenever deliveries list changes, ensure animation arrays are same length
+    itemOpacity.current = deliveries.map(
+      (_, i) => itemOpacity.current[i] || new Animated.Value(1),
+    );
+
+    itemTranslate.current = deliveries.map(
+      (_, i) => itemTranslate.current[i] || new Animated.Value(0),
+    );
+  }, [deliveries.length]);
+
+  const { completedOrderId } = useLocalSearchParams<{
+    completedOrderId?: string;
+  }>();
+
+  useEffect(() => {
+    if (!completedOrderId) return;
+
+    setDeliveries((prev: any) =>
+      prev.filter((p: any) => p.id !== completedOrderId),
+    );
+    router.setParams({ completedOrderId: undefined });
+  }, [completedOrderId]);
 
   /* ================= API ================= */
 
-  const fetchDeliveries = async () => {      // need to make it fetchDeleveries
+  const fetchDeliveries = async () => {
+    // need to make it fetchDeleveries
     if (!user?.email) return;
 
     try {
       setLoading(true);
 
-const res = await fetch(
-      `${API_URL}/getOrdersByFilter?email=${encodeURIComponent(
-        user.email
-      )}&status=delivery+rider+assigned&limit=1000&page=1`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          "x-client-type": "mobile",
+      const res = await fetch(
+        `${API_URL}/getOrdersByFilter?email=${encodeURIComponent(
+          user.email,
+        )}&status=delivery+rider+assigned&limit=1000&page=1`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "x-client-type": "mobile",
+          },
         },
-      }
-    );
+      );
 
       const data = await res.json();
 
-
-      console.log("this is the dataa==>>>",data)
+      console.log("this is the dataa==>>>", data);
 
       if (!res.ok) {
         throw new Error(data.message || "Failed to fetch orders");
@@ -123,6 +189,8 @@ const res = await fetch(
         name: o.customerName,
         phone: o.contactNo,
         address: o.address,
+        lat: o.orderLocation?.latitude,
+        lng: o.orderLocation?.longitude,
       }));
 
       setDeliveries(mapped);
@@ -160,8 +228,8 @@ const res = await fetch(
               duration: 420,
               useNativeDriver: true,
             }),
-          ])
-        )
+          ]),
+        ),
       ).start();
     } catch (err) {
       console.error("Pickup fetch error:", err);
@@ -177,20 +245,17 @@ const res = await fetch(
   // }, [user?.email, router]);
 
   useFocusEffect(
-  useCallback(() => {
-    fetchDeliveries();
-  }, [user?.email])
-);
-
-
+    useCallback(() => {
+      fetchDeliveries();
+    }, [user?.email]),
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchDeliveries();
   };
 
-
-    /* ================= SOCKET REALTIME DELIVERY ================= */
+  /* ================= SOCKET REALTIME DELIVERY ================= */
 
   // useEffect(() => {
   //   const riderId = user?._id;
@@ -257,39 +322,33 @@ const res = await fetch(
         <SkeletonCard />
         <SkeletonCard />
         <SkeletonCard />
-        <SkeletonCard/>
+        <SkeletonCard />
       </ScrollView>
     );
   }
 
   /* ================= EMPTY STATE ================= */
 
-if (!loading && deliveries.length === 0) {
-  return (
-    <View
-      style={[
-        styles.emptyWrap,
-        { backgroundColor: theme.background },
-      ]}
-    >
-      <Ionicons
-        name="bicycle-outline"
-        size={52}
-        color={theme.subText}
-        style={{ marginBottom: 14 }}
-      />
+  if (!loading && deliveries.length === 0) {
+    return (
+      <View style={[styles.emptyWrap, { backgroundColor: theme.background }]}>
+        <Ionicons
+          name="bicycle-outline"
+          size={52}
+          color={theme.subText}
+          style={{ marginBottom: 14 }}
+        />
 
-      <Text style={[styles.emptyTitle, { color: theme.text }]}>
-        No deliveries assigned
-      </Text>
+        <Text style={[styles.emptyTitle, { color: theme.text }]}>
+          No deliveries assigned
+        </Text>
 
-      <Text style={[styles.emptySub, { color: theme.subText }]}>
-        You’re all caught up. New deliveries will appear here once assigned.
-      </Text>
-    </View>
-  );
-}
-
+        <Text style={[styles.emptySub, { color: theme.subText }]}>
+          You’re all caught up. New deliveries will appear here once assigned.
+        </Text>
+      </View>
+    );
+  }
 
   /* ================= UI ================= */
 
@@ -343,9 +402,7 @@ if (!loading && deliveries.length === 0) {
               styles.card,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
-            onPress={() =>
-              router.push(`/(rider)/order/delivered/${p.id}`)
-            }
+            onPress={() => router.push(`/(rider)/order/delivered/${p.id}`)}
           >
             <View style={styles.iconWrap}>
               <Ionicons name="location" size={20} color={theme.primary} />
@@ -375,19 +432,31 @@ if (!loading && deliveries.length === 0) {
                   {p.address}
                 </Text>
               </View>
+              <View style={{ flexDirection: "row", marginTop: 6 }}>
+                <Ionicons
+                  name="navigate-outline"
+                  size={14}
+                  color={theme.primary}
+                />
+                <Text
+                  style={{
+                    fontSize: 12,
+                    marginLeft: 4,
+                    color: theme.primary,
+                    fontWeight: "600",
+                  }}
+                >
+                  {distanceMap[p.id]
+                    ? `${distanceMap[p.id].toFixed(2)} km away`
+                    : "Calculating..."}
+                </Text>
+              </View>
             </View>
 
             <View
-              style={[
-                styles.actionBtn,
-                { backgroundColor: theme.primary },
-              ]}
+              style={[styles.actionBtn, { backgroundColor: theme.primary }]}
             >
-              <Ionicons
-                name="chevron-forward"
-                size={18}
-                color="#000"
-              />
+              <Ionicons name="chevron-forward" size={18} color="#000" />
             </View>
           </TouchableOpacity>
         </Animated.View>
@@ -502,22 +571,21 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   emptyWrap: {
-  flex: 1,
-  alignItems: "center",
-  justifyContent: "center",
-  paddingHorizontal: 32,
-},
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 32,
+  },
 
-emptyTitle: {
-  fontSize: 16,
-  fontWeight: "800",
-  marginBottom: 6,
-},
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
 
-emptySub: {
-  fontSize: 13,
-  textAlign: "center",
-  lineHeight: 18,
-},
-
+  emptySub: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+  },
 });

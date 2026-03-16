@@ -13,6 +13,8 @@ export type Delivery = {
   orderId: string;
   name: string;
   address: string;
+  lat: number;
+  lng: number;
 };
 
 type RiderDataContextType = {
