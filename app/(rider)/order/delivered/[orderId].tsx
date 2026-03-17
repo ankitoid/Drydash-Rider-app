@@ -1017,9 +1017,9 @@ function ImageGalleryModal({
 
               {/* dot indicators */}
               <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 8 }}>
-                {images.map((_, i) => (
+                {images.map((img, i) => (
                   <View
-                    key={i}
+                    key={img}
                     style={[
                       modalStyles.dot,
                       i === index ? modalStyles.dotActive : undefined,
@@ -1033,7 +1033,7 @@ function ImageGalleryModal({
                 <FlatList
                   ref={thumbsRef}
                   data={images}
-                  keyExtractor={(_, i) => String(i)}
+                  keyExtractor={(item) => item}
                   horizontal
                   showsHorizontalScrollIndicator={false}
                   renderItem={renderThumb}
