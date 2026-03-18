@@ -8,22 +8,23 @@ import {
   StyleSheet,
   Text,
   View,
+  Image,
 } from "react-native";
 
 export default function Splash() {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { isAuthenticated, isLoading, user } = useAuth();
 
   const scale = useRef(new Animated.Value(0.85)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
-  // 🔒 Ensure navigation runs ONLY ONCE
   const hasNavigatedRef = useRef(false);
 
-
+  const logoSource = isDark
+    ? require("../assets/images/logo_dark.png")
+    : require("../assets/images/logo.png");
 
   useEffect(() => {
-    // 🔑 Prevent auto hide ONLY once
     SplashScreen.preventAutoHideAsync();
 
     Animated.parallel([
@@ -44,7 +45,6 @@ console.log("this is the user on top:: ", user)
 
 
   useEffect(() => {
-    // ⏳ Wait until auth is resolved
     if (isLoading) return;
     if (hasNavigatedRef.current) return;
 
@@ -60,9 +60,7 @@ console.log("this is the user on top:: ", user)
       }
     };
 
-    // small delay for UX smoothness
     const timer = setTimeout(navigate, 800);
-
     return () => clearTimeout(timer);
   }, [isLoading, isAuthenticated]);
 
@@ -80,27 +78,9 @@ console.log("this is the user on top:: ", user)
           alignItems: "center",
         }}
       >
-        <View
-          style={[
-            styles.logoCircle,
-            { backgroundColor: theme.primary },
-          ]}
-        >
-          <Text style={styles.logoText}>Dry</Text>
-        </View>
+        <Image source={logoSource} style={styles.logo} />
 
-        <Text style={[styles.brand, { color: theme.text }]}>
-          Dry Dash
-        </Text>
-
-        <Text
-          style={[
-            styles.tagline,
-            { color: theme.subText },
-          ]}
-        >
-          Rider App
-        </Text>
+        <Text style={[styles.brand, { color: theme.text }]}>Shiptos</Text>
       </Animated.View>
     </View>
   );
@@ -113,29 +93,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 
-  logoCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
-  },
 
-  logoText: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: "#000",
+  logo: {
+    width: 120,
+    height: 120,
+    resizeMode: "contain",
+    marginBottom: 12,
   },
 
   brand: {
     fontSize: 24,
     fontWeight: "900",
     letterSpacing: 0.8,
-  },
-
-  tagline: {
-    fontSize: 13,
-    marginTop: 6,
   },
 });

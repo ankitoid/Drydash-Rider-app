@@ -9,7 +9,8 @@ import { useTheme } from "../../context/ThemeContext";
 export function RiderHeader() {
   const insets = useSafeAreaInsets();
   const { theme, isDark, toggleTheme } = useTheme();
-  const {user} = useAuth()
+  const { user } = useAuth();
+  const logoSource = isDark ? require("../../assets/images/logo_dark.png") : require("../../assets/images/logo.png");
 
   return (
     <View
@@ -24,17 +25,18 @@ export function RiderHeader() {
     >
       {/* LEFT */}
       <View style={styles.left}>
-        <Image
-          source={require("../../assets/images/logo.png")}
-          style={styles.logo}
-        />
-        <Text style={[styles.title, { color: theme.text }]}>Dry Dash</Text>
+        <Image source={logoSource} style={styles.logo} />
+        <Text style={[styles.title, { color: theme.text }]}>Shiptos</Text>
       </View>
 
       {/* RIGHT */}
       <View style={styles.right}>
         <TouchableOpacity style={styles.iconBtn}>
-          <Ionicons name="notifications-outline" size={16} color="#000" />
+          <Ionicons
+            name="notifications-outline"
+            size={16}
+            color={theme.text}
+          />
         </TouchableOpacity>
 
         {/* THEME TOGGLE */}

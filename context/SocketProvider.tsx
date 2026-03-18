@@ -27,7 +27,6 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       //   console.log("user ifo---> ", user)
       //  console.log("data------------------------------------------>", data);
       const filteredPickups = (data?.Pickups).filter((el: any) => el.riderName === user.name)
-      console.log("filteredPickups------------------------------------------>", filteredPickups);
       setPickups([...filteredPickups]);
     } finally {
       // setRefreshing(false);

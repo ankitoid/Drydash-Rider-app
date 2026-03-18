@@ -116,7 +116,7 @@ export default function RiderLogin() {
               </View>
             </View> */}
             
-            <Text style={styles.brandTitle}>DryDash</Text>
+            <Text style={styles.brandTitle}>Shiptos</Text>
             <View style={styles.captainBadge}>
               <View style={styles.badgeDot} />
               <Text style={styles.captainText}>Captain Login</Text>

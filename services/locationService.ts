@@ -125,7 +125,7 @@ export class LocationService {
       distanceInterval: this.distanceInterval,
       pausesUpdatesAutomatically: false,
       foregroundService: {
-        notificationTitle: "DryDash tracking active",
+        notificationTitle: "Shiptos tracking active",
         notificationBody: "Live delivery location is running",
         notificationColor: "#10b981",
       },

@@ -70,7 +70,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       if (permissionState === "denied") {
         Alert.alert(
           "Location Permission Required",
-          "DryDash needs location access to track deliveries. Please grant permission.",
+          "Shiptos needs location access to track deliveries. Please grant permission.",
           [
             { text: "Cancel", style: "cancel" },
             {

@@ -32,8 +32,8 @@ const API_URL = "https://api.drydash.in/api/v1";
 
 const SERVICES = [
   { key: "laundry", label: "Laundry", icon: "shirt-outline" },
-  { key: "shoe", label: "Shoe Spa", icon: "walk-outline" },
-  { key: "drywash", label: "Dry-Clean", icon: "water-outline" },
+  { key: "shoespa", label: "Shoe Spa", icon: "walk-outline" },
+  { key: "dryclean", label: "Dry-Clean", icon: "water-outline" },
 ];
 
 /* ---------- Component ---------- */
@@ -295,7 +295,7 @@ export default function SelectItems() {
       quantity: it.qty,
       price: it.price,
       newQtyPrice: it.qty * it.price,
-      type: selected,
+      type: it.type,
       img: it.imgKey || "fallback.png",
     }));
 
@@ -750,7 +750,7 @@ const playAudio = async () => {
                         title: item.title,
                         price: item.price,
                         img: item.img,
-                        type: selected,
+                        type: item.type,
                       },
                       1
                     )

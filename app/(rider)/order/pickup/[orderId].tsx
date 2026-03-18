@@ -403,7 +403,7 @@ export default function PickupDetails() {
           <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Dry Dash</Text>
+        <Text style={styles.headerTitle}>Shiptos</Text>
 
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>
@@ -520,7 +520,7 @@ export default function PickupDetails() {
           onPress={() =>
             router.push({
               pathname: "/order/pickup/select-items/[type]",
-              params: { type: "shoe", orderId: orderId },
+              params: { type: "shoespa", orderId: orderId },
             })
           }
           style={[styles.itemCard, { backgroundColor: theme.card }]}
@@ -536,7 +536,7 @@ export default function PickupDetails() {
           onPress={() =>
             router.push({
               pathname: "/order/pickup/select-items/[type]",
-              params: { type: "drywash", orderId: orderId },
+              params: { type: "dryclean", orderId: orderId },
             })
           }
           style={[styles.itemCard, { backgroundColor: theme.card }]}

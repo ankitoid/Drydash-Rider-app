@@ -14,6 +14,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   BackHandler,
   Dimensions,
+  FlatList,
   Image,
   Linking,
   Modal,
@@ -23,9 +24,15 @@ import {
   Text,
   TouchableOpacity,
   View,
-  FlatList,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
+
+// import {
+//   cancelQR,
+//   createQrPoll,
+//   generateQR,
+//   type QRInfo,
+// } from "../../../../services/paymentService";
 
 /* ===================== INTERFACES ===================== */
 
@@ -87,15 +94,25 @@ export default function DeliveredOrderDetails() {
     useState<OrderDetails | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
 
-  // gallery state (NEW)
+  // gallery state
   const [galleryVisible, setGalleryVisible] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
+
+  const [showPaymentMethod, setShowPaymentMethod] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'online' | null>(null);
+
+  // QR/payment states
+  const [qrModalVisible, setQrModalVisible] = useState(false);
+  // const [qrInfo, setQrInfo] = useState<QRInfo | null>(null);
+  const qrPollRef = useRef<{ stop: () => void } | null>(null);
 
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
 
-  const API_URL = "https://api.drydash.in/api/v1/auth";
-  const base_url = "https://api.drydash.in/api/v1";
+  const API_URL = "http://192.168.10.208:5001/api/v1/auth";
+  const base_url = "http://192.168.10.208:5001/api/v1";
+  // const API_URL = "https://api.drydash.in/api/v1/auth";
+  // const base_url = "https://api.drydash.in/api/v1";
   const wattiUri = "https://live-server-101289.wati.io/api/v1";
   const token =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwibmFtZWlkIjoiYXl1c2hzaW5naDg0MjAxOEBnbWFpbC5jb20iLCJlbWFpbCI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwiYXV0aF90aW1lIjoiMTIvMDgvMjAyNSAwNzoyMzo1MyIsInRlbmFudF9pZCI6IjEwMTI4OSIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiVEVNUExBVEVfTUFOQUdFUiIsIkRFVkVMT1BFUiIsIkFVVE9NQVRJT05fTUFOQUdFUiJdLCJleHAiOjI1MzQwMjMwMDgwMCwiaXNzIjoiQ2xhcmVfQUkiLCJhdWQiOiJDbGFyZV9BSSJ9.NpVe1fi-RXRuNgCAGzFQLZT6dE7Y-rvlx1SYxLKZ_m4";
@@ -149,9 +166,7 @@ export default function DeliveredOrderDetails() {
       const templatePayload = {
         template_name: "delivery_success",
         broadcast_name: `delivery_success_${orderId}_${Date.now()}`,
-        parameters: [
-          { name: "name", value: order?.customerName || "Customer" },
-        ],
+        parameters: [{ name: "name", value: order?.customerName || "Customer" }],
       };
 
       const sendRes = await fetch(
@@ -299,7 +314,7 @@ export default function DeliveredOrderDetails() {
   };
 
   // Upload image to server — handles web & mobile and uses compressed image
-  const uploadImage = async () => {
+  const uploadImage = async (): Promise<boolean> => {
     try {
       console.log("this is the delivery image", deliveryImage);
 
@@ -352,13 +367,11 @@ export default function DeliveredOrderDetails() {
         );
       }
 
-      // updatng status
-      await updateStatusTo(orderId, "delivered");
-      await sendWhatsAppTemplateDelivered();
-      await getOrderDetails();
+      // DO NOT mark delivered here. We'll generate QR and finalize after payment (or cash fallback).
+      return true;
     } catch (error) {
       console.log("Image upload error:", error);
-      throw error;
+      return false;
     }
   };
 
@@ -429,22 +442,27 @@ export default function DeliveredOrderDetails() {
 
   useEffect(() => {
     const onBackPress = () => {
+      if (showPaymentMethod) {
+        setShowPaymentMethod(false);
+        return true;
+      }
+      if (qrModalVisible) {
+        // Don't allow back while QR is showing – force use of Cancel or Cash Received
+        return true;
+      }
       if (rescheduleVisible) {
         setRescheduleVisible(false);
         setOrderToReschedule(null);
         return true;
       }
-
       if (showCamera) {
         setShowCamera(false);
         return true;
       }
-
       if (showConfirm) {
         setShowConfirm(false);
         return true;
       }
-
       if (galleryVisible) {
         setGalleryVisible(false);
         return true;
@@ -456,7 +474,7 @@ export default function DeliveredOrderDetails() {
 
     const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => sub.remove();
-  }, [rescheduleVisible, showCamera, showConfirm, galleryVisible]);
+  }, [showPaymentMethod, qrModalVisible, rescheduleVisible, showCamera, showConfirm, galleryVisible]);
 
   // When CaptureImageModal returns a captured image URI, compress/manipulate it first
   const onImageCaptured = async (uri: string) => {
@@ -482,6 +500,148 @@ export default function DeliveredOrderDetails() {
       setShowConfirm(true);
     }
   };
+
+  const completeDeliveryWithImage = async () => {
+    try {
+      setDelivering(true);
+      setShowConfirm(false);
+
+      console.log("Delivering with image:", deliveryImage);
+      const uploaded = await uploadImage();
+
+      // Even if upload fails, we still mark as delivered (order is complete)
+      await updateStatusTo(orderId, "delivered");
+      await sendWhatsAppTemplateDelivered();
+      await getOrderDetails();
+
+      router.replace({
+        pathname: "/(rider)/(tabs)/delivered",
+        params: { completedOrderId: orderId },
+      });
+    } catch (err) {
+      console.error("Error completing delivery:", err);
+    } finally {
+      setDelivering(false);
+    }
+  };
+
+  // Called when user confirms the delivery after seeing the captured image
+  const confirmDelivered = async () => {
+    if (paymentMethod === 'cash') {
+      // Cash flow: image already captured, now upload and finalize
+      await completeDeliveryWithImage();
+    } else if (paymentMethod === 'online') {
+      // Online flow: payment already completed (or we are in cash fallback), now capture image and finalize
+      // But we are already in confirm modal triggered by image capture, so just complete
+      await completeDeliveryWithImage();
+    }
+  };
+
+  // Called when user skips image capture
+  const skipCapture = () => {
+    setDeliveryImage("uri");
+    setShowCamera(false);
+    setShowConfirm(true);
+  };
+
+  // Start online payment: generate QR, start polling, show QR modal
+  // const startOnlinePayment = async () => {
+  //   try {
+  //     setQrInfo(null);
+  //     setQrModalVisible(true);
+
+  //     // const qr = await generateQR(base_url, orderId);
+  //     if (!order?.order_id) {
+  //       console.error("Missing order_id for QR generation");
+  //       return;
+  //     }
+  //     console.log("this is my need for the key", order.order_id)
+  //     const qr = await generateQR(base_url, order.order_id);
+  //     setQrInfo(qr);
+
+  //     const poll = createQrPoll({
+  //       baseUrl: base_url,
+  //       qrId: qr.qrId,
+  //       intervalMs: 3000,
+  //       onUpdate: async (statusObj) => {
+  //         setQrInfo((prev) =>
+  //         ({
+  //           ...(prev ?? qr),
+  //           status: statusObj.status ?? prev?.status ?? qr.status,
+  //           paidAt: statusObj.paidAt ?? prev?.paidAt ?? null,
+  //           amount: statusObj.amount ?? prev?.amount ?? qr.amount,
+  //         } as QRInfo)
+  //         );
+
+  //         // If payment completed, stop polling and proceed to image capture
+  //         if (statusObj.status === "paid") {
+  //           try {
+  //             poll.stop();
+  //           } catch (e) { }
+  //           // Payment received – now capture delivery proof
+  //           setQrModalVisible(false);
+  //           setShowCamera(true);
+  //         }
+  //       },
+  //     });
+
+  //     qrPollRef.current = poll;
+  //     poll.start();
+  //   } catch (err) {
+  //     console.error("QR generate error:", err);
+  //     setQrModalVisible(false);
+  //     setQrInfo(null);
+  //   }
+  // };
+
+  // const stopQrPolling = () => {
+  //   try {
+  //     if (qrPollRef.current) {
+  //       qrPollRef.current.stop();
+  //       qrPollRef.current = null;
+  //     }
+  //   } catch (e) {
+  //     /* ignore */
+  //   }
+  // };
+
+  // const cancelCurrentQr = async (qrId?: string) => {
+  //   try {
+  //     const id = qrId || qrInfo?.qrId;
+  //     if (!id) return;
+  //     await cancelQR(base_url, id).catch((e) => console.warn("Cancel QR failed", e));
+  //   } catch (err) {
+  //     console.error("cancelCurrentQr error:", err);
+  //   } finally {
+  //     stopQrPolling();
+  //     setQrModalVisible(false);
+  //     setQrInfo(null);
+  //     setPaymentMethod(null); // reset payment method
+  //   }
+  // };
+
+  // // Cash fallback: called from QR modal when rider selects "Cash Received"
+  // const handleCashFallback = async () => {
+  //   // Cancel the QR on server
+  //   await cancelCurrentQr(qrInfo?.qrId);
+  //   // Now proceed with cash flow: capture image
+  //   setPaymentMethod('cash');
+  //   setShowCamera(true);
+  // };
+
+  // // Handle payment method selection
+  // const handlePaymentMethodSelect = (method: 'cash' | 'online') => {
+  //   setPaymentMethod(method);
+  //   setShowPaymentMethod(false);
+
+  //   if (method === 'cash') {
+  //     // Open camera immediately
+  //     setShowCamera(true);
+  //   } else {
+  //     // Online: generate QR and show modal
+  //     startOnlinePayment();
+  //   }
+  // };
 
   /* ---------- SKELETON ---------- */
 
@@ -516,35 +676,7 @@ export default function DeliveredOrderDetails() {
     );
   }
 
-  const onDeliveredPress = () => {
-    setShowCamera(true);
-  };
-
-  const skipCapture = () => {
-    // keep existing behavior: set a sentinel so uploadImage knows to skip actual upload
-    setDeliveryImage("uri");
-    setShowCamera(false);
-    setShowConfirm(true);
-  };
-
-  const confirmDelivered = async () => {
-    try {
-      setDelivering(true);
-      setShowConfirm(false);
-
-      console.log("Delivered with image:", deliveryImage);
-      await uploadImage();
-
-      router.replace({
-        pathname: "/(rider)/(tabs)/delivered",
-        params: { completedOrderId: orderId },
-      });
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setDelivering(false);
-    }
-  };
+  /* ===================== REMAINING UI CODE ===================== */
 
   const phoneNumber = order?.contactNo;
 
@@ -578,27 +710,17 @@ export default function DeliveredOrderDetails() {
       maximumFractionDigits: 2,
     }).format(n);
 
-  // discountAmount = subtotal - paid
   const paid = parseNumber(order.price);
   const discountAmount = subtotal - paid;
-
-  // avoid divide-by-zero
   const discountPercent = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
-
-  // formatted string like “-20%” or “0%”
   const discountLabel = `-${discountPercent}%`;
 
-  /* ===================== IMAGE GALLERY HELPERS (NEW) ===================== */
-
-  // Try a few common places where API might return images; include locally captured one too.
   const gatherOrderImages = (): string[] => {
     const imgs: string[] = [];
     if (Array.isArray(order?.intransitImage) && order!.intransitImage!.length) {
       imgs.push(...(order!.intransitImage || []));
     }
-    // include local captured image if present and not the sentinel "uri"
     if (deliveryImage && deliveryImage !== "uri") {
-      // put local captured image first
       imgs.unshift(deliveryImage);
     }
     return imgs;
@@ -633,7 +755,7 @@ export default function DeliveredOrderDetails() {
         <Text
           style={[styles.headerTitle, { color: isDark ? theme.text : "#fff" }]}
         >
-          Dry Dash
+          Shiptos
         </Text>
 
         <View style={[styles.avatar, { backgroundColor: theme.primarySoft }]}>
@@ -653,20 +775,11 @@ export default function DeliveredOrderDetails() {
       {/* DELIVERY DETAILS */}
       <View style={[styles.card, { backgroundColor: theme.card }]}>
         <View style={[styles.heading, { backgroundColor: theme.card }]}>
-          <Text style={[styles.cardTitle, { color: theme.text }]}>
-            Details
-          </Text>
+          <Text style={[styles.cardTitle, { color: theme.text }]}>Details</Text>
 
-          {/* Make Images tappable to open gallery */}
           <TouchableOpacity
             onPress={() => {
               const imgs = gatherOrderImages();
-              if (imgs.length === 0) {
-                // nothing to show — but still open to show "no images"
-                setGalleryIndex(0);
-                setGalleryVisible(true);
-                return;
-              }
               setGalleryIndex(0);
               setGalleryVisible(true);
             }}
@@ -693,15 +806,6 @@ export default function DeliveredOrderDetails() {
           value={order.customerName}
           theme={theme}
         />
-
-        {/* <DetailRow
-          icon="call-outline"
-          label="Contact"
-          value={order.contactNo}
-          theme={theme}
-          onPress={() => Linking.openURL(`tel:${order.contactNo}`)}
-          isLink
-        /> */}
 
         <DetailRow
           icon="location-outline"
@@ -771,23 +875,21 @@ export default function DeliveredOrderDetails() {
         </Text>
 
         <SummaryRow label="Subtotal" price={fmtINR(subtotal)} theme={theme} />
-
         <SummaryRow label="Discount" price={discountLabel} theme={theme} />
-
         <SummaryRow label="Total" price={fmtINR(paid)} bold theme={theme} />
       </View>
 
       {/* ACTION BUTTONS */}
       <View style={[styles.card, { backgroundColor: theme.card }]}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>
-          Delivery Action's
+          Delivery Actions
         </Text>
 
         <View style={styles.actionRow}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.deliveredBtn]}
             activeOpacity={0.8}
-            onPress={onDeliveredPress}
+            onPress={() => setShowPaymentMethod(true)}
             disabled={delivering}
           >
             <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
@@ -808,7 +910,46 @@ export default function DeliveredOrderDetails() {
       </View>
 
       {/* Modals */}
-      {/* Image gallery modal (NEW) */}
+
+      {/* Payment Method Modal */}
+      {/* <Modal
+        visible={showPaymentMethod}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPaymentMethod(false)}
+      >
+        <View style={modalStyles.backdrop}>
+          <View style={modalStyles.sheet}>
+            <Text style={modalStyles.title}>Select Payment Method</Text>
+            <Text style={modalStyles.sub}>How did the customer pay?</Text>
+
+            <View style={modalStyles.actionsRow}>
+              <TouchableOpacity
+                style={[modalStyles.action, { backgroundColor: "#22C55E" }]}
+                onPress={() => handlePaymentMethodSelect('cash')}
+              >
+                <Text style={modalStyles.actionTextWhite}>Cash</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[modalStyles.action, { backgroundColor: "#3B82F6" }]}
+                onPress={() => handlePaymentMethodSelect('online')}
+              >
+                <Text style={modalStyles.actionTextWhite}>Online</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setShowPaymentMethod(false)}
+              style={modalStyles.cancelBtn}
+            >
+              <Text style={modalStyles.cancelTextDark}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal> */}
+
+      {/* Image Gallery Modal */}
       <ImageGalleryModal
         visible={galleryVisible}
         images={gatherOrderImages()}
@@ -818,7 +959,12 @@ export default function DeliveredOrderDetails() {
 
       <CaptureImageModal
         visible={showCamera}
-        onCancel={() => setShowCamera(false)}
+        onCancel={() => {
+          setShowCamera(false);
+          // If we came from online payment and user cancels camera, go back to QR? Or just close?
+          // Simplest: just close camera, but we should probably reset payment method.
+          setPaymentMethod(null);
+        }}
         onImageCaptured={onImageCaptured}
         skipCapture={skipCapture}
       />
@@ -830,7 +976,10 @@ export default function DeliveredOrderDetails() {
         confirmText="Yes, Delivered"
         cancelText="Cancel"
         onConfirm={confirmDelivered}
-        onCancel={() => setShowConfirm(false)}
+        onCancel={() => {
+          setShowConfirm(false);
+          setDeliveryImage(null);
+        }}
       />
 
       <RescheduleModalRN
@@ -846,11 +995,25 @@ export default function DeliveredOrderDetails() {
         }}
         loading={rescheduling}
       />
+
+      {/* QR Payment Modal */}
+      {/* <QRPaymentModal
+        visible={qrModalVisible}
+        onClose={() => {
+          // Don't allow closing while waiting for payment – use Cancel or Cash Received
+          // So we do nothing here, or we could hide but keep polling? Better to keep visible.
+        }}
+        qrInfo={qrInfo}
+        onCancel={async (id?: string) => {
+          await cancelCurrentQr(id);
+        }}
+        onCashFallback={handleCashFallback}
+      /> */}
     </ScrollView>
   );
 }
 
-/* ===================== IMAGE GALLERY MODAL (NEW) ===================== */
+/* ===================== IMAGE GALLERY MODAL (unchanged) ===================== */
 
 function ImageGalleryModal({
   visible,
@@ -872,7 +1035,6 @@ function ImageGalleryModal({
     if (visible) {
       setIndex(initialIndex || 0);
       setLoaded(images.map(() => false));
-      // small delay so modal mounts before scrolling
       setTimeout(() => {
         if (flatRef.current && typeof initialIndex === "number") {
           try {
@@ -889,7 +1051,6 @@ function ImageGalleryModal({
     if (viewableItems && viewableItems.length) {
       const idx = viewableItems[0].index ?? 0;
       setIndex(idx);
-      // try to keep thumbnail centered
       if (thumbsRef.current) {
         try {
           thumbsRef.current.scrollToIndex({
@@ -907,7 +1068,7 @@ function ImageGalleryModal({
 
   const window = Dimensions.get("window");
   const modalHeight = Math.round(window.height * 0.8);
-  const imageAreaHeight = modalHeight - 140; // leave space for header + thumbs
+  const imageAreaHeight = modalHeight - 140;
 
   const renderMainItem = ({ item, index: i }: { item: string; index: number }) => (
     <View style={{ width: window.width, alignItems: "center", justifyContent: "center" }}>
@@ -1015,7 +1176,6 @@ function ImageGalleryModal({
                 maxToRenderPerBatch={1}
               />
 
-              {/* dot indicators */}
               <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 8 }}>
                 {images.map((img, i) => (
                   <View
@@ -1028,7 +1188,6 @@ function ImageGalleryModal({
                 ))}
               </View>
 
-              {/* thumbnail strip */}
               <View style={{ marginTop: 12 }}>
                 <FlatList
                   ref={thumbsRef}
@@ -1052,8 +1211,7 @@ function ImageGalleryModal({
   );
 }
 
-
-/* ===================== RESCHEDULE MODAL (RN) ===================== */
+/* ===================== RESCHEDULE MODAL (unchanged) ===================== */
 
 function RescheduleModalRN({
   visible,
@@ -1074,7 +1232,6 @@ function RescheduleModalRN({
   const [date, setDate] = useState<Date>(new Date());
   const [showIOSPicker, setShowIOSPicker] = useState(false);
 
-  /* Reset modal state when opened */
   useEffect(() => {
     if (visible) {
       setStep("CHOICE");
@@ -1083,7 +1240,6 @@ function RescheduleModalRN({
     }
   }, [visible]);
 
-  /* Android picker */
   const openAndroidPicker = () => {
     DateTimePickerAndroid.open({
       value: date,
@@ -1103,14 +1259,12 @@ function RescheduleModalRN({
         <View style={modalStyles.sheet}>
           <Text style={modalStyles.title}>Reschedule Delivery</Text>
 
-          {/* ================= STEP 1 ================= */}
           {step === "CHOICE" && (
             <>
               <Text style={modalStyles.sub}>
                 Did the customer answer your call?
               </Text>
 
-              {/* Answered + Not Answered in SAME ROW */}
               <View style={modalStyles.actionsRow}>
                 <TouchableOpacity
                   style={[modalStyles.action, { backgroundColor: "#22C55E" }]}
@@ -1120,14 +1274,13 @@ function RescheduleModalRN({
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[modalStyles.action, { backgroundColor: "#FACC15" }]} // Yellow
+                  style={[modalStyles.action, { backgroundColor: "#FACC15" }]}
                   onPress={() => setStep("NO_ANSWER")}
                 >
                   <Text style={modalStyles.actionTextDark}>Not Answered</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Cancel Button */}
               <TouchableOpacity
                 onPress={onClose}
                 style={modalStyles.cancelBtn}
@@ -1138,7 +1291,6 @@ function RescheduleModalRN({
             </>
           )}
 
-          {/* ================= STEP 2A ================= */}
           {step === "ANSWERED" && (
             <>
               <Text style={modalStyles.sub}>
@@ -1191,7 +1343,6 @@ function RescheduleModalRN({
             </>
           )}
 
-          {/* ================= STEP 2B ================= */}
           {step === "NO_ANSWER" && (
             <>
               <Text style={modalStyles.sub}>
@@ -1232,7 +1383,7 @@ function RescheduleModalRN({
   );
 }
 
-/* ===================== SMALL COMPONENTS ===================== */
+/* ===================== SMALL COMPONENTS (unchanged) ===================== */
 
 function DetailRow({ icon, label, value, theme, onPress, isLink }: any) {
   return (
@@ -1304,16 +1455,67 @@ function SummaryRow({
   );
 }
 
-function ConfirmRow({ icon, text, theme }: any) {
+function QRPaymentModal({
+  visible,
+  onClose,
+  qrInfo,
+  onCancel,
+  onCashFallback,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  qrInfo: any;
+  onCancel: (qrId?: string) => Promise<void>;
+  onCashFallback: () => Promise<void>;
+}) {
+  if (!visible) return null;
+
   return (
-    <View style={styles.confirmRow}>
-      <Ionicons name={icon} size={20} color={theme.primary} />
-      <Text style={[styles.confirmText, { color: theme.text }]}>{text}</Text>
-    </View>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={modalStyles.backdrop}>
+        <View style={[modalStyles.sheet, { alignItems: "center" }]}>
+          <Text style={[modalStyles.title, { marginBottom: 8 }]}>Scan to Pay</Text>
+
+          {qrInfo?.qrImageUrl ? (
+            <Image
+              source={{ uri: qrInfo.qrImageUrl }}
+              style={{ width: 220, height: 220, marginBottom: 12 }}
+              resizeMode="contain"
+            />
+          ) : (
+            <View style={{ width: 220, height: 220, alignItems: "center", justifyContent: "center", backgroundColor: "#F3F4F6", borderRadius: 12, marginBottom: 12 }}>
+              <Text>Generating QR...</Text>
+            </View>
+          )}
+
+          <Text style={{ fontWeight: "800", marginBottom: 6 }}>
+            Amount: {qrInfo?.amount ? `₹${qrInfo.amount}` : "—"}
+          </Text>
+
+          <View style={{ flexDirection: "row", width: "100%", gap: 8 }}>
+            <TouchableOpacity
+              style={[modalStyles.action, { backgroundColor: "#10B981" }]}
+              onPress={async () => {
+                await onCashFallback();
+              }}
+            >
+              <Text style={modalStyles.actionTextWhite}>Cash Received</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[modalStyles.action, { backgroundColor: "#EF4444" }]}
+              onPress={async () => {
+                await onCancel(qrInfo?.qrId);
+              }}
+            >
+              <Text style={modalStyles.actionTextWhite}>Cancel QR</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
-
-/* ===================== STYLES ===================== */
 
 const styles = StyleSheet.create({
   header: {
@@ -1540,7 +1742,7 @@ const modalStyles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#E5E7EB", // gray
+    backgroundColor: "#E5E7EB",
   },
 
   cancelTextDark: {
@@ -1576,15 +1778,12 @@ const modalStyles = StyleSheet.create({
     gap: 6,
   },
 
-  /* Gallery specific */
-  /* Add / replace these fields inside your modalStyles object */
   gallerySheet: {
     backgroundColor: "#0B0B0C",
     paddingTop: 12,
     paddingHorizontal: 12,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    // darker sheet so images pop
   },
   galleryHeader: {
     flexDirection: "row",
