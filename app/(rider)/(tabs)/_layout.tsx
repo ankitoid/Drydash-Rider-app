@@ -94,6 +94,20 @@ export default function RiderTabsLayout() {
               ),
             }}
           />
+          <Tabs.Screen
+            name="notifications/index"
+            options={{
+              title: "Notifications",
+              tabBarLabel: "Notifications",
+              tabBarIcon: ({ color, focused }) => (
+                <Ionicons
+                  name={focused ? "notifications" : "notifications-outline"}
+                  size={22}
+                  color={color}
+                />
+              ),
+            }}
+          />
         </Tabs>
       </View>
     </>

@@ -31,7 +31,8 @@ export function RiderHeader() {
 
       {/* RIGHT */}
       <View style={styles.right}>
-        <TouchableOpacity style={styles.iconBtn}>
+        <TouchableOpacity style={styles.iconBtn}
+          onPress={() => router.push("/(rider)/notifications")}>
           <Ionicons
             name="notifications-outline"
             size={16}
