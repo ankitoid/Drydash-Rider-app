@@ -7,6 +7,14 @@ import { registerForPushNotifications } from "@/services/pushNotifications";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true, // ✅ REQUIRED (new)
+    shouldShowList: true, // ✅ REQUIRED (new)
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 type NotifyPayload = {
   title: string;
@@ -15,29 +23,57 @@ type NotifyPayload = {
 };
 
 type NotificationContextType = {
-  notify: (payload: NotifyPayload) => void;
+  notify: (payload: NotifyPayload & { data?: any }) => void;
   hide: () => void;
+  notifications: NotificationItem[];
+  addNotification: (n: NotificationItem) => void;
+};
+
+type NotificationItem = {
+  _id: string;
+  title: string;
+  message: string;
+  data?: any;
+  createdAt?: string;
 };
 
 const NotificationContext = createContext<NotificationContextType | null>(null);
 
-export const NotificationProvider = ({ children }: { children: React.ReactNode }) => {
+export const NotificationProvider = ({
+  children,
+}: {
+  children: React.ReactNode;
+}) => {
   const { user, token } = useAuth();
   const [visible, setVisible] = useState(false);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [duration, setDuration] = useState(500);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  const addNotification = (n: NotificationItem) => {
+    setNotifications((prev) => [n, ...prev]);
+  };
 
   const fcmTokenRef = useRef<string | null>(null);
   const handledInitialResponseRef = useRef(false);
 
-  const notify = ({ title, message, duration = 500 }: NotifyPayload) => {
+  const notify = ({ title, message, duration = 500, data }: any) => {
+    const id = `${Date.now()}-${Math.random()}`;
+
     setTitle(title);
     setMessage(message);
     setDuration(duration);
     setVisible(true);
-  };
 
+    addNotification({
+      _id: id,
+      title,
+      message,
+      data,
+      createdAt: new Date().toISOString(),
+    });
+  };
   const hide = () => {
     setVisible(false);
   };
@@ -89,17 +125,20 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
         fcmTokenRef.current = fcmToken;
 
-        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
+        await fetch(
+          "https://rider-app-testing.onrender.com/api/v1/rider/push-tokens",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              token: fcmToken,
+              platform: "android",
+            }),
           },
-          body: JSON.stringify({
-            token: fcmToken,
-            platform: "android",
-          }),
-        });
+        );
       } catch (err) {
         console.warn("Notification registration failed:", err);
       }
@@ -120,14 +159,17 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       if (!t) return;
 
       try {
-        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-            // no auth header because token is gone; if you require auth, handle this from logout flow instead
+        await fetch(
+          "https://rider-app-testing.onrender.com/api/v1/rider/push-tokens",
+          {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              // no auth header because token is gone; if you require auth, handle this from logout flow instead
+            },
+            body: JSON.stringify({ token: t }),
           },
-          body: JSON.stringify({ token: t }),
-        });
+        );
       } catch (err) {
         console.warn("Failed to remove push token on logout:", err);
       } finally {
@@ -138,53 +180,38 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     cleanup();
   }, [user, token]);
 
-
   useEffect(() => {
-    // foreground: show in-app toast + play sound
-    const receivedSub = Notifications.addNotificationReceivedListener((notification) => {
-      try {
+    const receivedSub = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        console.log("🔥 RECEIVED RAW:", notification);
+
         const content = notification.request.content;
-        const t = content.title ?? "Notification";
-        const b = content.body ?? "";
-        // show your in-app toast
-        notify({ title: String(t), message: String(b), duration: 3000 });
 
-        // play sound (best-effort)
+        // ✅ HANDLE BOTH TYPES
+        const title = content.title || content.data?.title || "Notification";
+
+        const message = content.body || content.data?.message || "";
+
+        const data = content.data || {};
+
+        // 🔥 FORCE UI UPDATE
+        notify({
+          title,
+          message,
+          data,
+          duration: 3000,
+        });
+
         playNotificationSound().catch(() => {});
-      } catch (err) {
-        console.warn("notification received handler error:", err);
-      }
-    });
+      },
+    );
 
-    
-    const responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-      try {
-        if (handledInitialResponseRef.current) {
-        }
-        const data = response.notification.request.content.data as any;
-
-        if (handledInitialResponseRef.current) {
-          return;
-        }
-
+    const responseSub = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        const data = response.notification.request.content.data;
         handleNavigationFromData(data);
-      } catch (err) {
-        console.warn("notification response handler error:", err);
-      }
-    });
-
-    (async () => {
-      try {
-        const lastResponse = await Notifications.getLastNotificationResponseAsync();
-        if (lastResponse) {
-          handledInitialResponseRef.current = true;
-          const data = lastResponse.notification.request.content.data as any;
-          handleNavigationFromData(data);
-        }
-      } catch (err) {
-        console.warn("Error checking initial notification response:", err);
-      }
-    })();
+      },
+    );
 
     return () => {
       receivedSub.remove();
@@ -192,8 +219,41 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
     };
   }, []);
 
+  useEffect(() => {
+    if (!user?._id) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `https://rider-app-testing.onrender.com/api/v1/notifications/${user._id}`,
+        );
+
+        const data = await res.json();
+
+        if (data?.data?.length) {
+          const latest = data.data[0];
+
+          // check if already exists
+          setNotifications((prev) => {
+            const exists = prev.find((n) => n._id === latest._id);
+            if (exists) return prev;
+
+            // 🔥 ADD NEW NOTIFICATION
+            return [latest, ...prev];
+          });
+        }
+      } catch (err) {
+        console.log("Polling error:", err);
+      }
+    }, 5000); // every 5 sec
+
+    return () => clearInterval(interval);
+  }, [user?._id]);
+
   return (
-    <NotificationContext.Provider value={{ notify, hide }}>
+    <NotificationContext.Provider
+      value={{ notify, hide, notifications, addNotification }}
+    >
       {children}
 
       <InAppToast
@@ -209,6 +269,7 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
 
 export const useNotification = () => {
   const ctx = useContext(NotificationContext);
-  if (!ctx) throw new Error("useNotification must be used inside NotificationProvider");
+  if (!ctx)
+    throw new Error("useNotification must be used inside NotificationProvider");
   return ctx;
 };
