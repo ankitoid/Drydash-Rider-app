@@ -1,9 +1,11 @@
 import { locationService } from "@/services/locationService";
+import { LOCATION_TASK_NAME } from "@/services/backgroundLocationTask";
+import { promptBatteryOptimization } from "@/services/batteryOptimization";
 import { socket } from "@/services/socket";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { Alert, AppState, AppStateStatus } from "react-native";
+import { Alert, AppState, AppStateStatus, Platform } from "react-native";
 import { useAuth } from "./useAuth";
 
 interface LocationContextType {
@@ -17,6 +19,9 @@ const LocationContext = createContext<LocationContextType | undefined>(
   undefined,
 );
 
+// How often the watchdog checks if the background task is alive (ms)
+const WATCHDOG_INTERVAL = 15000; // 15 seconds
+
 export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -25,13 +30,14 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const trackingRef = useRef(false);
   const lockRef = useRef(false);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [isTracking, setIsTracking] = useState(false);
   const [lastLocation, setLastLocation] =
     useState<Location.LocationObject | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /* ---------------- START ---------------- */
+  /* ---------- FOREGROUND WATCHER (UI only) ---------- */
 
   useEffect(() => {
     const watchLocation = async () => {
@@ -51,6 +57,107 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
     watchLocation();
   }, []);
+
+  /* ---------- AUTO-RESUME ON APP REOPEN ---------- */
+  //
+  // If the OS killed the app while tracking was active, and the user
+  // reopens the app, automatically restart background tracking.
+
+  useEffect(() => {
+    if (!user?._id) return;
+
+    const checkAndResume = async () => {
+      try {
+        const wasTracking = await locationService.wasTrackingBeforeKill();
+        if (!wasTracking) return;
+
+        console.log("🔄 Auto-resume: tracking was active before kill, restarting...");
+
+        // Ensure user data is in AsyncStorage for the background task
+        await locationService.setCachedUser(user);
+
+        const alreadyRunning =
+          await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+
+        if (!alreadyRunning) {
+          await locationService.startTracking();
+        }
+
+        if (socket.connected) {
+          socket.emit("riderStatusUpdate", {
+            riderId: user._id,
+            status: "active",
+          });
+        }
+
+        trackingRef.current = true;
+        setIsTracking(true);
+        startWatchdog(); // Start the watchdog after auto-resume
+        console.log("✅ Auto-resume: tracking restored");
+      } catch (err) {
+        console.error("❌ Auto-resume failed:", err);
+      }
+    };
+
+    checkAndResume();
+  }, [user?._id]);
+
+  /* ---------- WATCHDOG ---------- */
+  //
+  // Periodically checks if the background task is still running.
+  // If someone dismisses the notification or OS kills the service,
+  // the watchdog detects it, shows an alert, and restarts tracking.
+
+  const startWatchdog = () => {
+    // Clear any existing watchdog
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+    }
+
+    watchdogRef.current = setInterval(async () => {
+      if (!trackingRef.current) return; // Not supposed to be tracking
+
+      try {
+        const stillRunning =
+          await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+
+        if (!stillRunning) {
+          console.log("🚨 Watchdog: tracking stopped unexpectedly, restarting...");
+
+          // Show alert to user
+          Alert.alert(
+            "⚠️ Tracking Interrupted",
+            "Location tracking was stopped. Restarting automatically to ensure continuous delivery tracking. Please do not dismiss the tracking notification.",
+            [{ text: "OK" }],
+          );
+
+          // Auto-restart
+          try {
+            await locationService.startTracking();
+            console.log("✅ Watchdog: tracking restarted successfully");
+          } catch (restartErr) {
+            console.error("❌ Watchdog: failed to restart tracking", restartErr);
+          }
+        }
+      } catch (err) {
+        console.error("❌ Watchdog check failed:", err);
+      }
+    }, WATCHDOG_INTERVAL);
+  };
+
+  const stopWatchdog = () => {
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  };
+
+  // Cleanup watchdog on unmount
+  useEffect(() => {
+    return () => stopWatchdog();
+  }, []);
+
+  /* ---------- START TRACKING ---------- */
 
   const startTracking = async (): Promise<void> => {
     if (lockRef.current) {
@@ -126,17 +233,15 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         "✅ Background location permission granted, starting tracking...",
       );
 
-      await locationService.setCachedUser(user);
+      // Prompt user to disable battery optimization (like Google Maps does)
+      // This is the #1 reason background tracking gets killed on Android
+      const batteryPrompted = await AsyncStorage.getItem("battery_opt_prompted");
+      if (Platform.OS === "android" && !batteryPrompted) {
+        await promptBatteryOptimization();
+        await AsyncStorage.setItem("battery_opt_prompted", "true");
+      }
 
-      await AsyncStorage.setItem(
-        "bg_user",
-        JSON.stringify({
-          id: user._id,
-          name: user.name || "Unknown Rider",
-          phone: user.phone || "N/A",
-          bgToken: (user as any).bgToken || null,
-        }),
-      );
+      await locationService.setCachedUser(user);
 
       await locationService.startTracking();
 
@@ -151,7 +256,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsTracking(true);
       setError(null);
 
-      console.log("✅ Live tracking enabled");
+      // Start the watchdog to guard against notification dismissal
+      startWatchdog();
+
+      console.log("✅ Live tracking enabled (foreground service + watchdog active)");
     } catch (err) {
       console.error("❌ startTracking failed:", err);
       setError(err instanceof Error ? err.message : "Failed to start tracking");
@@ -164,6 +272,8 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  /* ---------- STOP TRACKING ---------- */
+
   const stopTracking = async (): Promise<void> => {
     if (lockRef.current) {
       console.log("⚠️ Stop tracking already in progress");
@@ -172,6 +282,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     lockRef.current = true;
 
     try {
+      // Stop watchdog first
+      stopWatchdog();
+
       await locationService.stopTracking();
 
       trackingRef.current = false;
@@ -193,7 +306,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /* ---------------- TOGGLE ---------------- */
+  /* ---------- TOGGLE ---------- */
 
   const toggleTracking = async (): Promise<void> => {
     console.log("🔄 Toggling tracking...");
@@ -209,11 +322,44 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /* ---------------- APP STATE ---------------- */
+  /* ---------- APP STATE: FOREGROUND RECOVERY ---------- */
+  //
+  // When the user brings the app back to the foreground, check if
+  // the background task is still alive. If the OS killed it, restart.
 
   useEffect(() => {
-    const handleAppStateChange = (nextState: AppStateStatus) => {
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
       console.log("📱 App state:", nextState);
+
+      if (
+        nextState === "active" &&
+        appState.current.match(/inactive|background/) &&
+        trackingRef.current
+      ) {
+        // App returning to foreground while tracking should be active
+        try {
+          const stillRunning =
+            await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+
+          if (!stillRunning) {
+            console.log(
+              "⚠️ Background task was killed, restarting...",
+            );
+
+            Alert.alert(
+              "⚠️ Tracking Restarted",
+              "Location tracking was interrupted while in the background. It has been automatically restarted.",
+              [{ text: "OK" }],
+            );
+
+            await locationService.startTracking();
+            console.log("✅ Background task restarted on foreground return");
+          }
+        } catch (err) {
+          console.error("❌ Foreground recovery failed:", err);
+        }
+      }
+
       appState.current = nextState;
     };
 

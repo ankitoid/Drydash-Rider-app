@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { useTheme } from "../../../context/ThemeContext";
 
-const API_URL = "https://rider-app-testing.onrender.com/api/v1";
+const API_URL = "https://api.drydash.in/api/v1";
 
 export default function Notifications() {
   const { user } = useAuth();
@@ -38,7 +38,8 @@ export default function Notifications() {
       const data = await res.json();
 
       // Merge API + live notifications
-      const merged = [...(data.data || []), ...liveNotifications];
+      // const merged = [...(data.data || []), ...liveNotifications];
+      const merged = [...(data.data || [])];
 
       const unique = merged.filter(
         (item, index, self) =>

@@ -125,20 +125,17 @@ export const NotificationProvider = ({
 
         fcmTokenRef.current = fcmToken;
 
-        await fetch(
-          "https://rider-app-testing.onrender.com/api/v1/rider/push-tokens",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              token: fcmToken,
-              platform: "android",
-            }),
+        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
-        );
+          body: JSON.stringify({
+            token: fcmToken,
+            platform: "android",
+          }),
+        });
       } catch (err) {
         console.warn("Notification registration failed:", err);
       }
@@ -159,17 +156,14 @@ export const NotificationProvider = ({
       if (!t) return;
 
       try {
-        await fetch(
-          "https://rider-app-testing.onrender.com/api/v1/rider/push-tokens",
-          {
-            method: "DELETE",
-            headers: {
-              "Content-Type": "application/json",
-              // no auth header because token is gone; if you require auth, handle this from logout flow instead
-            },
-            body: JSON.stringify({ token: t }),
+        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+            // no auth header because token is gone; if you require auth, handle this from logout flow instead
           },
-        );
+          body: JSON.stringify({ token: t }),
+        });
       } catch (err) {
         console.warn("Failed to remove push token on logout:", err);
       } finally {
@@ -225,7 +219,7 @@ export const NotificationProvider = ({
     const interval = setInterval(async () => {
       try {
         const res = await fetch(
-          `https://rider-app-testing.onrender.com/api/v1/notifications/${user._id}`,
+          `https://api.drydash.in/api/v1/notifications/${user._id}`,
         );
 
         const data = await res.json();

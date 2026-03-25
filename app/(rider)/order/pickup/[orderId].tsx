@@ -5,22 +5,22 @@ import * as FileSystem from "expo-file-system/legacy";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
+    Alert,
+    Linking,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
 const API_URL = "https://api.drydash.in/api/v1";
-// const API_URL = "https://rider-app-testing.onrender.com/api/v1";
+// const API_URL = "https://api.drydash.in/api/v1";
 
 export default function PickupDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
@@ -67,7 +67,9 @@ export default function PickupDetails() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data.message || `Failed to load pickup (${res.status})`);
+        throw new Error(
+          data.message || `Failed to load pickup (${res.status})`,
+        );
       }
 
       setPickup(data.data || { Name: "", Address: "", Contact: "" });
@@ -84,11 +86,11 @@ export default function PickupDetails() {
     return () => {
       // stop active recording safely
       if (recording) {
-        recording.stopAndUnloadAsync().catch(() => { });
+        recording.stopAndUnloadAsync().catch(() => {});
       }
       // unload sound if any
       if (soundRef.current) {
-        soundRef.current.unloadAsync().catch(() => { });
+        soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }
     };
@@ -109,11 +111,13 @@ export default function PickupDetails() {
       }
 
       const permission = await Audio.requestPermissionsAsync?.();
-      const granted = (permission as any)?.granted || (permission as any)?.status === "granted";
+      const granted =
+        (permission as any)?.granted ||
+        (permission as any)?.status === "granted";
       if (!granted) {
         Alert.alert(
           "Permission required",
-          "Microphone permission is needed to record voice."
+          "Microphone permission is needed to record voice.",
         );
         return;
       }
@@ -124,9 +128,7 @@ export default function PickupDetails() {
       const options =
         (Audio as any).RECORDING_OPTIONS_PRESET_HIGH_QUALITY ||
         (Audio as any).RecordingOptionsPresets?.HIGH_QUALITY;
-      const { recording: rec } = await Audio.Recording.createAsync(
-        options
-      );
+      const { recording: rec } = await Audio.Recording.createAsync(options);
       setRecording(rec);
       setIsRecording(true);
     } catch (err) {
@@ -167,7 +169,7 @@ export default function PickupDetails() {
           }
         } else {
           // not loaded - unload and recreate
-          await soundRef.current.unloadAsync().catch(() => { });
+          await soundRef.current.unloadAsync().catch(() => {});
           soundRef.current = null;
         }
       }
@@ -183,7 +185,7 @@ export default function PickupDetails() {
             // finished
             setIsPlaying(false);
             // unload to free resources
-            sound.unloadAsync().catch(() => { });
+            sound.unloadAsync().catch(() => {});
             soundRef.current = null;
           }
         } else {
@@ -205,16 +207,15 @@ export default function PickupDetails() {
         try {
           const st = await soundRef.current.getStatusAsync();
           if (st.isLoaded) {
-            await soundRef.current.stopAsync().catch(() => { });
+            await soundRef.current.stopAsync().catch(() => {});
           }
-        } catch { }
-        await soundRef.current.unloadAsync().catch(() => { });
+        } catch {}
+        await soundRef.current.unloadAsync().catch(() => {});
         soundRef.current = null;
       }
       try {
         await FileSystem.deleteAsync(recordedUri, { idempotent: true });
-      } catch (e) {
-      }
+      } catch (e) {}
     } catch (e) {
       // ignore
     } finally {
@@ -267,7 +268,9 @@ export default function PickupDetails() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        throw new Error(data?.message || `Failed to cancel pickup (${res.status})`);
+        throw new Error(
+          data?.message || `Failed to cancel pickup (${res.status})`,
+        );
       }
 
       Alert.alert("Success", data?.message || "Pickup cancelled");
@@ -278,11 +281,15 @@ export default function PickupDetails() {
       setRecordedUri(null);
       setIsRecording(false);
       if (recording) {
-        try { await recording.stopAndUnloadAsync(); } catch { }
+        try {
+          await recording.stopAndUnloadAsync();
+        } catch {}
         setRecording(null);
       }
       if (soundRef.current) {
-        try { await soundRef.current.unloadAsync(); } catch { }
+        try {
+          await soundRef.current.unloadAsync();
+        } catch {}
         soundRef.current = null;
       }
       setIsPlaying(false);
@@ -305,7 +312,7 @@ export default function PickupDetails() {
   const handleWhatsApp = () => {
     if (!phoneNumber) return;
     const message = encodeURIComponent(
-      "Hello, I am your pickup rider. I have arrived for your laundry pickup."
+      "Hello, I am your pickup rider. I have arrived for your laundry pickup.",
     );
     Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`);
   };
@@ -333,7 +340,10 @@ export default function PickupDetails() {
       nativeUrl = `https://www.google.com/maps/search/?api=1&query=${q}`;
       webUrl = nativeUrl;
     } else {
-      Alert.alert("Navigation unavailable", "No address or coordinates available.");
+      Alert.alert(
+        "Navigation unavailable",
+        "No address or coordinates available.",
+      );
       return;
     }
 
@@ -349,7 +359,10 @@ export default function PickupDetails() {
       try {
         await Linking.openURL(webUrl);
       } catch (e) {
-        Alert.alert("Navigation error", "Unable to open maps app or web fallback.");
+        Alert.alert(
+          "Navigation error",
+          "Unable to open maps app or web fallback.",
+        );
       }
     }
   };
@@ -386,7 +399,9 @@ export default function PickupDetails() {
   }
 
   const isNavigateDisabled =
-    !pickup?.Address && !(pickup as any)?.latitude && !(pickup as any)?.longitude;
+    !pickup?.Address &&
+    !(pickup as any)?.latitude &&
+    !(pickup as any)?.longitude;
 
   const isCancelDisabled =
     (!cancelNote.trim() && !recordedUri) || isSubmittingCancel;
@@ -544,7 +559,9 @@ export default function PickupDetails() {
           <View style={styles.iconWrap}>
             <Ionicons name="water-outline" size={24} color={theme.primary} />
           </View>
-          <Text style={[styles.itemText, { color: theme.text }]}>Dry-Clean</Text>
+          <Text style={[styles.itemText, { color: theme.text }]}>
+            Dry-Clean
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -595,7 +612,11 @@ export default function PickupDetails() {
                     style={[styles.playBtn, { backgroundColor: theme.primary }]}
                     onPress={togglePlayPause}
                   >
-                    <Ionicons name={isPlaying ? "pause" : "play"} size={20} color="#000" />
+                    <Ionicons
+                      name={isPlaying ? "pause" : "play"}
+                      size={20}
+                      color="#000"
+                    />
                     <Text style={styles.voiceBtnText}>
                       {isPlaying ? "Pause" : "Play"}
                     </Text>
@@ -616,7 +637,9 @@ export default function PickupDetails() {
 
             {/* Validation hint */}
             {!cancelNote.trim() && !recordedUri && (
-              <Text style={{ color: theme.danger, fontSize: 12, marginBottom: 8 }}>
+              <Text
+                style={{ color: theme.danger, fontSize: 12, marginBottom: 8 }}
+              >
                 Add a note or record a voice message to cancel the pickup.
               </Text>
             )}
@@ -628,14 +651,14 @@ export default function PickupDetails() {
                   // safe stop on close
                   try {
                     if (recording) await recording.stopAndUnloadAsync();
-                  } catch { }
+                  } catch {}
                   // unload sound if any
                   try {
                     if (soundRef.current) {
                       await soundRef.current.unloadAsync();
                       soundRef.current = null;
                     }
-                  } catch { }
+                  } catch {}
                   setRecording(null);
                   setIsRecording(false);
                   setIsPlaying(false);

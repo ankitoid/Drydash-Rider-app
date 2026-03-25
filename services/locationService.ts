@@ -1,11 +1,16 @@
 import * as Location from "expo-location";
 import * as Battery from "expo-battery";
+import * as Notifications from "expo-notifications";
 import { LOCATION_TASK_NAME } from "./backgroundLocationTask";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
+
+const TRACKING_CHANNEL_ID = "location-tracking";
 
 const CONFIG_KEY = "bg_config_v1";
 const STATUS_KEY = "bg_status";
 const BG_USER_KEY = "bg_user";
+const WAS_TRACKING_KEY = "was_tracking";
 
 export type PermissionState = "denied" | "foreground" | "background";
 
@@ -15,9 +20,9 @@ export class LocationService {
   private cachedUser: any = null;
 
   private distanceInterval = 10;
-  private timeInterval = 30000;
+  private timeInterval = 10000; // 10 seconds for real-time tracking
 
-  private constructor() {}
+  private constructor() { }
 
   static getInstance(): LocationService {
     if (!LocationService.instance) {
@@ -53,7 +58,7 @@ export class LocationService {
 
   async checkPermissions(): Promise<PermissionState> {
     let fg = await Location.getForegroundPermissionsAsync();
-    
+
     if (fg.status !== "granted") {
       fg = await Location.requestForegroundPermissionsAsync();
       if (fg.status !== "granted") return "denied";
@@ -72,7 +77,7 @@ export class LocationService {
   async requestBackgroundPermission(): Promise<boolean> {
     // Ensure foreground is granted first
     let fg = await Location.getForegroundPermissionsAsync();
-    
+
     if (fg.status !== "granted") {
       fg = await Location.requestForegroundPermissionsAsync();
       if (fg.status !== "granted") {
@@ -116,23 +121,51 @@ export class LocationService {
     if (alreadyRunning) {
       console.log("⚠️ Background task already running");
       this.isTracking = true;
+      await this.setWasTracking(true);
       return;
     }
 
+    // ── Create a dedicated notification channel for tracking ──
+    // MAX importance + PUBLIC visibility = always visible on lock screen + non-dismissable
+    if (Platform.OS === "android") {
+      await Notifications.setNotificationChannelAsync(TRACKING_CHANNEL_ID, {
+        name: "Location Tracking",
+        description: "Persistent notification while live delivery tracking is active",
+        importance: Notifications.AndroidImportance.MAX,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        bypassDnd: true,
+        sound: null,               // No sound — this is a silent persistent notification
+        enableVibrate: false,      // No vibration
+        showBadge: false,          // No badge count
+      });
+      console.log("✅ Tracking notification channel created (MAX importance, PUBLIC lock screen)");
+    }
+
     await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
-      accuracy: Location.Accuracy.Balanced,
+      accuracy: Location.Accuracy.BestForNavigation,
       timeInterval: this.timeInterval,
       distanceInterval: this.distanceInterval,
       pausesUpdatesAutomatically: false,
+      // ── Doze mode resilience ──
+      deferredUpdatesInterval: 0,
+      deferredUpdatesDistance: 0,
+      // ── iOS: Blue bar like Google Maps ──
+      showsBackgroundLocationIndicator: true,
+      activityType: Location.ActivityType.AutomotiveNavigation,
+      mayShowUserSettingsDialog: true,
+      // ── Android: Persistent foreground service notification ──
       foregroundService: {
-        notificationTitle: "Shiptos tracking active",
-        notificationBody: "Live delivery location is running",
+        notificationTitle: "🟢 Shiptos tracking active",
+        notificationBody: "Live delivery location is being shared",
         notificationColor: "#10b981",
+        killServiceOnDestroy: false,
+        notificationChannelId: TRACKING_CHANNEL_ID, // Use our MAX-importance channel
       },
     });
 
     this.isTracking = true;
-    console.log("✅ Background tracking started");
+    await this.setWasTracking(true);
+    console.log("✅ Background tracking started (foreground service active)");
   }
 
   async stopTracking(): Promise<void> {
@@ -150,10 +183,36 @@ export class LocationService {
     }
 
     this.isTracking = false;
+    await this.setWasTracking(false);
   }
 
   isTrackingActive(): boolean {
     return this.isTracking;
+  }
+
+  /* ----------- AUTO-RESUME SUPPORT ----------- */
+
+  /** Persist whether tracking was active (survives process kill) */
+  private async setWasTracking(value: boolean): Promise<void> {
+    try {
+      if (value) {
+        await AsyncStorage.setItem(WAS_TRACKING_KEY, "true");
+      } else {
+        await AsyncStorage.removeItem(WAS_TRACKING_KEY);
+      }
+    } catch (e) {
+      console.warn("setWasTracking failed", e);
+    }
+  }
+
+  /** Check if tracking was running before the OS killed the process */
+  async wasTrackingBeforeKill(): Promise<boolean> {
+    try {
+      const val = await AsyncStorage.getItem(WAS_TRACKING_KEY);
+      return val === "true";
+    } catch {
+      return false;
+    }
   }
 
   /* ---------------- CONFIG ---------------- */
