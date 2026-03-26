@@ -69,6 +69,7 @@ interface OrderDetails {
   riderDate: string;
   rescheduledDate?: string | null;
   intransitImage?: string[];
+  isPaid?: boolean;
 }
 
 /* ===================== COMPONENT ===================== */
@@ -128,7 +129,7 @@ export default function DeliveredOrderDetails() {
         : `google.navigation:q=${latitude},${longitude}`;
 
     Linking.openURL(url).catch((err) =>
-      console.error("Failed to open map", err)
+      console.error("Failed to open map", err),
     );
   };
 
@@ -162,7 +163,7 @@ export default function DeliveredOrderDetails() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(templatePayload),
-        }
+        },
       );
 
       return sendRes.ok;
@@ -173,7 +174,7 @@ export default function DeliveredOrderDetails() {
   };
 
   const sendWhatsAppTemplateRescheduleNoCall = async (
-    orderIdParam?: string
+    orderIdParam?: string,
   ) => {
     try {
       const phone = normalizePhoneForWhatsApp(order?.contactNo);
@@ -194,7 +195,7 @@ export default function DeliveredOrderDetails() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(templatePayload),
-        }
+        },
       );
 
       return sendRes.ok;
@@ -206,7 +207,7 @@ export default function DeliveredOrderDetails() {
 
   const sendWhatsAppTemplateRescheduleWithCall = async (
     orderIdParam?: string,
-    chosenDate?: Date
+    chosenDate?: Date,
   ) => {
     try {
       const rescheduleDate = chosenDate
@@ -237,7 +238,7 @@ export default function DeliveredOrderDetails() {
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(templatePayload),
-        }
+        },
       );
 
       return sendRes.ok;
@@ -335,7 +336,7 @@ export default function DeliveredOrderDetails() {
               "x-client-type": "mobile",
               Accept: "application/json",
             },
-          }
+          },
         );
 
         const json = await res.json().catch(() => null);
@@ -347,7 +348,7 @@ export default function DeliveredOrderDetails() {
         }
       } else {
         console.log(
-          "Skipping image upload (no image or user skipped capture)."
+          "Skipping image upload (no image or user skipped capture).",
         );
       }
 
@@ -368,7 +369,7 @@ export default function DeliveredOrderDetails() {
   const rescheduleOrder = async (
     orderIdParam: string,
     newDate: Date | null,
-    answered: boolean
+    answered: boolean,
   ) => {
     setRescheduling(true);
     try {
@@ -382,7 +383,7 @@ export default function DeliveredOrderDetails() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ newDate: dateToSend }),
-        }
+        },
       );
 
       const json = await res.json();
@@ -399,7 +400,7 @@ export default function DeliveredOrderDetails() {
       if (answered) {
         await sendWhatsAppTemplateRescheduleWithCall(
           orderIdParam,
-          newDate ?? undefined
+          newDate ?? undefined,
         );
       } else {
         await sendWhatsAppTemplateRescheduleNoCall(orderIdParam);
@@ -463,7 +464,7 @@ export default function DeliveredOrderDetails() {
         {
           compress: 0.8,
           format: SaveFormat.JPEG,
-        }
+        },
       );
 
       setDeliveryImage(manipulated.uri);
@@ -551,7 +552,7 @@ export default function DeliveredOrderDetails() {
     if (!phoneNumber) return;
 
     const message = encodeURIComponent(
-      "Hello, I am your delivery rider. I am on the way to deliver your order."
+      "Hello, I am your delivery rider. I am on the way to deliver your order.",
     );
 
     Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`);
@@ -562,7 +563,7 @@ export default function DeliveredOrderDetails() {
 
   const subtotal = order.items.reduce(
     (acc, it) => acc + parseNumber(it.newQtyPrice),
-    0
+    0,
   );
 
   const fmtINR = (n: number) =>
@@ -587,6 +588,8 @@ export default function DeliveredOrderDetails() {
     }
     return imgs;
   };
+
+  const isPaid = !!order.isPaid;
 
   /* ===================== UI ===================== */
 
@@ -632,6 +635,26 @@ export default function DeliveredOrderDetails() {
         <Text style={[styles.orderId, { color: theme.text }]}>
           {order.order_id}
         </Text>
+        <View
+          style={[
+            styles.paymentPill,
+            { backgroundColor: isPaid ? "#DCFCE7" : "#FEF3C7" },
+          ]}
+        >
+          <Ionicons
+            name={isPaid ? "checkmark-circle" : "time-outline"}
+            size={13}
+            color={isPaid ? "#16A34A" : "#D97706"}
+          />
+          <Text
+            style={[
+              styles.paymentPillText,
+              { color: isPaid ? "#16A34A" : "#D97706" },
+            ]}
+          >
+            {isPaid ? "Paid" : "Due"}
+          </Text>
+        </View>
       </View>
 
       {/* DELIVERY DETAILS */}
@@ -818,7 +841,6 @@ export default function DeliveredOrderDetails() {
   );
 }
 
-
 function ImageGalleryModal({
   visible,
   images,
@@ -842,7 +864,10 @@ function ImageGalleryModal({
       setTimeout(() => {
         if (flatRef.current && typeof initialIndex === "number") {
           try {
-            flatRef.current.scrollToIndex({ index: initialIndex, animated: false });
+            flatRef.current.scrollToIndex({
+              index: initialIndex,
+              animated: false,
+            });
           } catch {
             /* ignore if index out of range */
           }
@@ -868,14 +893,28 @@ function ImageGalleryModal({
     }
   }).current;
 
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+  const viewabilityConfig = useRef({
+    viewAreaCoveragePercentThreshold: 50,
+  }).current;
 
   const window = Dimensions.get("window");
   const modalHeight = Math.round(window.height * 0.8);
   const imageAreaHeight = modalHeight - 140;
 
-  const renderMainItem = ({ item, index: i }: { item: string; index: number }) => (
-    <View style={{ width: window.width, alignItems: "center", justifyContent: "center" }}>
+  const renderMainItem = ({
+    item,
+    index: i,
+  }: {
+    item: string;
+    index: number;
+  }) => (
+    <View
+      style={{
+        width: window.width,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
       <View
         style={{
           width: window.width * 0.95,
@@ -947,14 +986,23 @@ function ImageGalleryModal({
   );
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <View style={modalStyles.backdrop}>
         <View style={[modalStyles.gallerySheet, { height: modalHeight }]}>
           <View style={modalStyles.galleryHeader}>
             <Text style={modalStyles.title}>Images</Text>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text style={{ color: "#6B7280", marginRight: 12, fontWeight: "700" }}>
-                {images && images.length ? `${index + 1} / ${images.length}` : "0 / 0"}
+              <Text
+                style={{ color: "#6B7280", marginRight: 12, fontWeight: "700" }}
+              >
+                {images && images.length
+                  ? `${index + 1} / ${images.length}`
+                  : "0 / 0"}
               </Text>
 
               <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
@@ -980,7 +1028,13 @@ function ImageGalleryModal({
                 maxToRenderPerBatch={1}
               />
 
-              <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 8 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  marginTop: 8,
+                }}
+              >
                 {images.map((img, i) => (
                   <View
                     key={img}
@@ -1015,7 +1069,6 @@ function ImageGalleryModal({
   );
 }
 
-
 function RescheduleModalRN({
   visible,
   onClose,
@@ -1030,7 +1083,7 @@ function RescheduleModalRN({
   loading?: boolean;
 }) {
   const [step, setStep] = useState<"CHOICE" | "ANSWERED" | "NO_ANSWER">(
-    "CHOICE"
+    "CHOICE",
   );
   const [date, setDate] = useState<Date>(new Date());
   const [showIOSPicker, setShowIOSPicker] = useState(false);
@@ -1057,7 +1110,12 @@ function RescheduleModalRN({
   if (!visible) return null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
       <View style={modalStyles.backdrop}>
         <View style={modalStyles.sheet}>
           <Text style={modalStyles.title}>Reschedule Delivery</Text>
@@ -1186,7 +1244,6 @@ function RescheduleModalRN({
   );
 }
 
-
 function DetailRow({ icon, label, value, theme, onPress, isLink }: any) {
   return (
     <TouchableOpacity
@@ -1277,6 +1334,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: { fontWeight: "900", fontSize: 16 },
+  paymentPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    margin: 8,
+  },
+  paymentPillText: { fontSize: 10, fontWeight: "600" },
 
   avatar: {
     width: 32,
@@ -1286,8 +1353,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { fontWeight: "800" },
-
-  statusWrap: { alignItems: "center", marginVertical: 14 },
+  statusWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    margin: 8,
+  },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",

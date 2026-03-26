@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "252232255425",
-    "project_id": "ugc-washrz",
-    "storage_bucket": "ugc-washrz.firebasestorage.app"
+    "project_number": "677197589463",
+    "project_id": "shiptos-rider-fcm",
+    "storage_bucket": "shiptos-rider-fcm.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:252232255425:android:3ad1a82d2b5e2772155140",
+        "mobilesdk_app_id": "1:677197589463:android:628fe83a974543e5ca3992",
         "android_client_info": {
           "package_name": "com.drydash.rider"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAl-R8Br03eloXoN9PPfiPaB44vZepKnGk"
+          "current_key": "AIzaSyBRQPZlEr_hnHwV4XS_wjKfmzoAMFJwMsQ"
         }
       ],
       "services": {

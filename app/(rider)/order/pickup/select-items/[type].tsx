@@ -144,33 +144,32 @@ export default function SelectItems() {
     }
   };
 
-  // mark pickup complete on server (called after successful file upload)
-  const completePickup = async (id: string) => {
-    try {
-      const res = await fetch(`${API_URL}/completePickup/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "x-client-type": "mobile",
-        },
-      });
+  // const completePickup = async (id: string) => {
+  //   try {
+  //     const res = await fetch(`${API_URL}/completePickup/${id}`, {
+  //       method: "PUT",
+  //       headers: {
+  //         "Content-Type": "application/json",
+  //         "x-client-type": "mobile",
+  //       },
+  //     });
 
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        console.warn("completePickup failed:", res.status, json);
-        return { ok: false, status: res.status, json };
-      }
-      return { ok: true, status: res.status, json };
-    } catch (err) {
-      console.error("completePickup error:", err);
-      return { ok: false, err };
-    }
-  };
+  //     const json = await res.json().catch(() => null);
+  //     if (!res.ok) {
+  //       console.warn("completePickup failed:", res.status, json);
+  //       return { ok: false, status: res.status, json };
+  //     }
+  //     return { ok: true, status: res.status, json };
+  //   } catch (err) {
+  //     console.error("completePickup error:", err);
+  //     return { ok: false, err };
+  //   }
+  // };
 
   const sendWatiMessage = async (
     customerNumber: string,
     name: string,
-    totalBill: number
+    totalBill: number,
   ) => {
     try {
       const url =
@@ -181,7 +180,8 @@ export default function SelectItems() {
         method: "POST",
         headers: {
           "content-type": "application/json-patch+json",
-          Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwibmFtZWlkIjoiYXl1c2hzaW5naDg0MjAxOEBnbWFpbC5jb20iLCJlbWFpbCI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwiYXV0aF90aW1lIjoiMTIvMDgvMjAyNSAwNzoyMzo1MyIsInRlbmFudF9pZCI6IjEwMTI4OSIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiVEVNUExBVEVfTUFOQUdFUiIsIkRFVkVMT1BFUiIsIkFVVE9NQVRJT05fTUFOQUdFUiJdLCJleHAiOjI1MzQwMjMwMDgwMCwiaXNzIjoiQ2xhcmVfQUkiLCJhdWQiOiJDbGFyZV9BSSJ9.NpVe1fi-RXRuNgCAGzFQLZT6dE7Y-rvlx1SYxLKZ_m4",
+          Authorization:
+            "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwibmFtZWlkIjoiYXl1c2hzaW5naDg0MjAxOEBnbWFpbC5jb20iLCJlbWFpbCI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwiYXV0aF90aW1lIjoiMTIvMDgvMjAyNSAwNzoyMzo1MyIsInRlbmFudF9pZCI6IjEwMTI4OSIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiVEVNUExBVEVfTUFOQUdFUiIsIkRFVkVMT1BFUiIsIkFVVE9NQVRJT05fTUFOQUdFUiJdLCJleHAiOjI1MzQwMjMwMDgwMCwiaXNzIjoiQ2xhcmVfQUkiLCJhdWQiOiJDbGFyZV9BSSJ9.NpVe1fi-RXRuNgCAGzFQLZT6dE7Y-rvlx1SYxLKZ_m4",
         },
         body: JSON.stringify({
           parameters: [
@@ -259,8 +259,8 @@ export default function SelectItems() {
     0,
     Math.min(
       100,
-      Number(discountPercentStr === "" ? 0 : Number(discountPercentStr)) || 0
-    )
+      Number(discountPercentStr === "" ? 0 : Number(discountPercentStr)) || 0,
+    ),
   );
 
   const discount = Math.round((subtotal * discountPercent) / 100);
@@ -322,7 +322,7 @@ export default function SelectItems() {
       if (!deviceCoords) {
         return Alert.alert(
           "Location required",
-          "This action requires location permission. Please enable location and try again."
+          "This action requires location permission. Please enable location and try again.",
         );
       }
     }
@@ -351,7 +351,7 @@ export default function SelectItems() {
           const blob = await uriToBlob(uri);
           form.append("image", blob as any, filename);
           console.log(
-            `Appended web blob ${filename} size: ${(blob as any).size}`
+            `Appended web blob ${filename} size: ${(blob as any).size}`,
           );
         } else {
           form.append("image", {
@@ -397,31 +397,30 @@ export default function SelectItems() {
 
       if (!res.ok) {
         console.error("Upload failed. Response not OK.", res.status, json);
-        setConfirmLoading(false);
+        // setConfirmLoading(false);
         return Alert.alert("Failed", json?.message || "Upload failed");
       }
+      // const completeRes = await completePickup(orderId);
+      // if (!completeRes.ok) {
+      //   // upload succeeded but status update failed — warn user but keep uploaded files
+      //   console.warn(
+      //     "Files uploaded but failed to update pickup status",
+      //     completeRes
+      //   );
+      //   Alert.alert(
+      //     "Partial Success",
+      //     "Files uploaded but failed to update pickup status. Please try marking it complete again from the dashboard."
+      //   );
+      // } else {
+      //   console.log("Pickup marked complete:", completeRes);
 
-      const completeRes = await completePickup(orderId);
-      if (!completeRes.ok) {
-        // upload succeeded but status update failed — warn user but keep uploaded files
-        console.warn(
-          "Files uploaded but failed to update pickup status",
-          completeRes
-        );
-        Alert.alert(
-          "Partial Success",
-          "Files uploaded but failed to update pickup status. Please try marking it complete again from the dashboard."
-        );
-      } else {
-        console.log("Pickup marked complete:", completeRes);
-
-        try {
-          const phone = currObj.contactNo ?? pickup?.Contact ?? "";
-          const name = currObj.customerName ?? pickup?.Name ?? "";
-          await sendWatiMessage(phone, name, payable);
-        } catch (err) {
-          console.warn("sendWatiMessage failed:", err);
-        }
+      try {
+        const phone = currObj.contactNo ?? pickup?.Contact ?? "";
+        const name = currObj.customerName ?? pickup?.Name ?? "";
+        await sendWatiMessage(phone, name, payable);
+      } catch (err) {
+        console.warn("sendWatiMessage failed:", err);
+        // }
       }
 
       Alert.alert("Success", "Files uploaded!");
@@ -451,7 +450,7 @@ export default function SelectItems() {
     if (cartItemsArray.length === 0) {
       return Alert.alert(
         "Error",
-        "Add at least one item to proceed to checkout"
+        "Add at least one item to proceed to checkout",
       );
     }
 
@@ -472,7 +471,7 @@ export default function SelectItems() {
             },
           },
           { text: "OK" },
-        ]
+        ],
       );
       return;
     }
@@ -492,7 +491,7 @@ export default function SelectItems() {
         {
           compress: 0.8,
           format: SaveFormat.JPEG,
-        }
+        },
       );
 
       setPhotos((prev) => [...prev, manipulated.uri]);
@@ -515,7 +514,7 @@ export default function SelectItems() {
       });
 
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
       );
       setRecording(recording);
       setAudioUri(null);
@@ -533,71 +532,74 @@ export default function SelectItems() {
     }
   };
 
-const stopRecording = async () => {
-  if (!recording) return;
-  try {
-    await recording.stopAndUnloadAsync();
-    const uri = recording.getURI();
-    setRecording(null);
+  const stopRecording = async () => {
+    if (!recording) return;
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
 
-    if (uri) {
-      setAudioUri(uri);
-      try {
-        const { sound: tmpSound, status } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: false }
+      if (uri) {
+        setAudioUri(uri);
+        try {
+          const { sound: tmpSound, status } = await Audio.Sound.createAsync(
+            { uri },
+            { shouldPlay: false },
+          );
+          const durMs =
+            typeof (status as any).durationMillis === "number"
+              ? (status as any).durationMillis
+              : 0;
+          setAudioDuration(Math.round(durMs / 1000));
+          await tmpSound.unloadAsync();
+        } catch (e) {
+          console.warn("Failed to read audio duration", e);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to stop recording", err);
+    }
+  };
+
+  const playAudio = async () => {
+    if (!audioUri) return;
+    try {
+      if (!sound) {
+        const { sound: s } = await Audio.Sound.createAsync(
+          { uri: audioUri },
+          { shouldPlay: true },
         );
-        const durMs = typeof (status as any).durationMillis === "number" ? (status as any).durationMillis : 0;
-        setAudioDuration(Math.round(durMs / 1000));
-        await tmpSound.unloadAsync();
-      } catch (e) {
-        console.warn("Failed to read audio duration", e);
-      }
-    }
-  } catch (err) {
-    console.error("Failed to stop recording", err);
-  }
-};
-
-const playAudio = async () => {
-  if (!audioUri) return;
-  try {
-    if (!sound) {
-      const { sound: s } = await Audio.Sound.createAsync(
-        { uri: audioUri },
-        { shouldPlay: true }
-      );
-      setSound(s);
-      setIsPlaying(true);
-
-      s.setOnPlaybackStatusUpdate((status) => {
-        if (!status) return;
-        if (!("isLoaded" in status) || !(status as any).isLoaded) {
-          return;
-        }
-        const loaded = status as any;
-        setIsPlaying(Boolean(loaded.isPlaying));
-        if (loaded.didJustFinish) {
-          s.unloadAsync().catch(() => {});
-          setSound(null);
-          setIsPlaying(false);
-        }
-      });
-    } else {
-      const status = await sound.getStatusAsync();
-      if ("isPlaying" in status && status.isPlaying) {
-        await sound.pauseAsync();
-        setIsPlaying(false);
-      } else {
-        await sound.playAsync();
+        setSound(s);
         setIsPlaying(true);
+
+        s.setOnPlaybackStatusUpdate((status) => {
+          if (!status) return;
+          if (!("isLoaded" in status) || !(status as any).isLoaded) {
+            return;
+          }
+          const loaded = status as any;
+          setIsPlaying(Boolean(loaded.isPlaying));
+          if (loaded.didJustFinish) {
+            s.unloadAsync().catch(() => {});
+            setSound(null);
+            setIsPlaying(false);
+          }
+        });
+      } else {
+        const status = await sound.getStatusAsync();
+        if ("isPlaying" in status && status.isPlaying) {
+          await sound.pauseAsync();
+          setIsPlaying(false);
+        } else {
+          await sound.playAsync();
+          setIsPlaying(true);
+        }
       }
+    } catch (err) {
+      console.error("Failed to play/pause audio", err);
+      Alert.alert("Playback error", "Unable to play the recorded message.");
     }
-  } catch (err) {
-    console.error("Failed to play/pause audio", err);
-    Alert.alert("Playback error", "Unable to play the recorded message.");
-  }
-};
+  };
 
   const removeAudio = async () => {
     setAudioUri(null);
@@ -607,8 +609,7 @@ const playAudio = async () => {
         await sound.unloadAsync();
         setSound(null);
       }
-    } catch (e) {
-    }
+    } catch (e) {}
   };
 
   const handleDiscountChange = (text: string) => {
@@ -752,7 +753,7 @@ const playAudio = async () => {
                         img: item.img,
                         type: item.type,
                       },
-                      1
+                      1,
                     )
                   }
                   style={[
@@ -1032,18 +1033,21 @@ const playAudio = async () => {
                     />
                   </TouchableOpacity>
 
-                  <Text style={[styles.audioDurationText, { color: theme.subText }]}>
-                    {audioDuration != null ? `${audioDuration}s` : audioUri ? "…" : "No recording"}
+                  <Text
+                    style={[styles.audioDurationText, { color: theme.subText }]}
+                  >
+                    {audioDuration != null
+                      ? `${audioDuration}s`
+                      : audioUri
+                        ? "…"
+                        : "No recording"}
                   </Text>
                 </View>
 
                 <TouchableOpacity
                   onPress={removeAudio}
                   disabled={!audioUri}
-                  style={[
-                    styles.audioTrash,
-                    { opacity: audioUri ? 1 : 0.4 },
-                  ]}
+                  style={[styles.audioTrash, { opacity: audioUri ? 1 : 0.4 }]}
                 >
                   <Ionicons name="trash-outline" size={18} color="#EF4444" />
                 </TouchableOpacity>
