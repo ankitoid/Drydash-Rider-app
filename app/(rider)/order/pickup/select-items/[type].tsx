@@ -1,6 +1,4 @@
 import UniversalLoader from "@/components/Loader/UniversalLoader";
-import { productImages } from "@/constants/productImages";
-import { PRODUCTS } from "@/constants/products";
 import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -30,10 +28,17 @@ import { useAuth } from "../../../../../context/useAuth";
 
 const API_URL = "https://api.drydash.in/api/v1";
 
-const SERVICES = [
-  { key: "laundry", label: "Laundry", icon: "shirt-outline" },
-  { key: "shoespa", label: "Shoe Spa", icon: "walk-outline" },
-  { key: "dryclean", label: "Dry-Clean", icon: "water-outline" },
+// Service icon mapping
+const SERVICE_ICONS: Record<string, string> = {
+  laundry: "shirt-outline",
+  shoespa: "walk-outline",
+  dryclean: "water-outline",
+};
+
+const SERVICE_OPTIONS = [
+  { slug: "laundry", label: "Laundry" },
+  { slug: "shoespa", label: "Shoe Spa" },
+  { slug: "dryclean", label: "Dry-Clean" },
 ];
 
 /* ---------- Component ---------- */
@@ -57,6 +62,22 @@ export default function SelectItems() {
 
   const [selected, setSelected] = useState<string>(initialType);
   const [checkoutModal, setCheckoutModal] = useState(false);
+
+  // Dynamically fetched service data and pagination per slug
+  const [servicesBySlug, setServicesBySlug] = useState<
+    Record<
+      string,
+      {
+        catalog?: any;
+        items: any[];
+        page: number;
+        totalPages: number;
+        hasNextPage: boolean;
+        loading: boolean;
+      }
+    >
+  >({});
+  const [servicesLoading, setServicesLoading] = useState(false);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
@@ -90,28 +111,173 @@ export default function SelectItems() {
     if (params?.type) setSelected(params.type);
   }, [params?.type]);
 
+  console.log("Fetching pickup details for orderId:", orderId);
+
   useEffect(() => {
     if (orderId) {
       fetchPickupById(orderId);
     }
   }, [orderId]);
 
-  const items = useMemo(() => {
-    const category = PRODUCTS[selected as keyof typeof PRODUCTS];
-    if (!category) return [];
+  const PAGE_LIMIT = 10;
 
-    return category.children.map((item, index) => ({
-      id: `${selected}-${index}`,
-      title: item.label,
-      price: item.Price,
-      img: productImages[item.img] ?? productImages.fallback,
-      type: item.type,
+  /* ---------- Fetch the selected service catalog ---------- */
+  const fetchSelectedService = async (slug: string, page = 1) => {
+    const current = servicesBySlug[slug] ?? {
+      items: [],
+      page: 0,
+      totalPages: 0,
+      hasNextPage: true,
+      loading: false,
+    };
+
+    if (current.loading) return;
+
+    if (page === 1) {
+      setServicesLoading(true);
+    }
+
+    setServicesBySlug((prev) => ({
+      ...prev,
+      [slug]: {
+        ...current,
+        loading: true,
+      },
     }));
+
+    try {
+      const res = await fetch(
+        `${API_URL}/catalog/${slug}?isActive=true&page=${page}&limit=${PAGE_LIMIT}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            "x-client-type": "mobile",
+          },
+        },
+      );
+
+      const json = await res.json().catch(() => null);
+      console.log(`Catalog ${slug} API response:`, json);
+      if (!res.ok) {
+        console.warn(`Failed to fetch catalog ${slug}`, res.status, json);
+        setServicesBySlug((prev) => ({
+          ...prev,
+          [slug]: {
+            ...current,
+            loading: false,
+          },
+        }));
+        return;
+      }
+
+      const catalog = json?.data ?? null;
+      const pagination = json?.pagination ?? {};
+      if (!catalog) {
+        console.warn(`No catalog data returned for ${slug}`);
+        setServicesBySlug((prev) => ({
+          ...prev,
+          [slug]: {
+            ...current,
+            loading: false,
+          },
+        }));
+        return;
+      }
+
+      const incomingItems = Array.isArray(catalog.items) ? catalog.items : [];
+      const mergedItems =
+        page === 1 ? incomingItems : [...current.items, ...incomingItems];
+
+      setServicesBySlug((prev) => ({
+        ...prev,
+        [slug]: {
+          catalog,
+          items: mergedItems,
+          page,
+          totalPages: pagination.totalPages ?? page,
+          hasNextPage:
+            typeof pagination.hasNextPage === "boolean"
+              ? pagination.hasNextPage
+              : page < (pagination.totalPages ?? page),
+          loading: false,
+        },
+      }));
+    } catch (err) {
+      console.error(`fetchSelectedService error for ${slug}:`, err);
+      setServicesBySlug((prev) => ({
+        ...prev,
+        [slug]: {
+          ...current,
+          loading: false,
+        },
+      }));
+    } finally {
+      if (page === 1) {
+        setServicesLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (selected) {
+      const service = servicesBySlug[selected];
+      if (!service || service.page === 0) {
+        fetchSelectedService(selected, 1);
+      }
+    }
   }, [selected]);
+
+  const selectedService = servicesBySlug[selected] ?? {
+    catalog: null,
+    items: [] as any[],
+    page: 0,
+    totalPages: 0,
+    hasNextPage: false,
+    loading: false,
+  };
+
+  const items = useMemo(() => {
+    // Get service items from the selected slug
+    if (!selectedService.items) return [];
+
+    // Map API items to the expected format with all details
+    return selectedService.items.map((item: any, index: number) => ({
+      id: item._id || `${selected}-${index}`,
+      title: item.label,
+      price: item.price,
+      displayPrice: item.displayPrice || `${item.price}/${item.unit}`,
+      description: item.mainDescription,
+      heading: item.mainHeading,
+      // Use the first image from the API response
+      img: item.images?.[0]?.url
+        ? { uri: item.images[0].url }
+        : { uri: "https://via.placeholder.com/100?text=No+Image" },
+      type: item.type,
+      unit: item.unit,
+      process: item.process || [],
+      sku: item.sku,
+    }));
+  }, [selected, servicesBySlug]);
 
   const availableItems = items.filter((i) => getQty(i.id) === 0);
   const cartItemsArray = Object.values(cartItems);
   const subtotal = Math.round(total());
+
+  const loadMoreItems = () => {
+    if (!selectedService.hasNextPage || selectedService.loading) return;
+    fetchSelectedService(selected, selectedService.page + 1);
+  };
+
+  const isCloseToBottom = ({
+    layoutMeasurement,
+    contentOffset,
+    contentSize,
+  }: any) => {
+    return (
+      layoutMeasurement.height + contentOffset.y >= contentSize.height - 120
+    );
+  };
 
   const [discountPercentStr, setDiscountPercentStr] = useState<string>("0");
   const [keyboardHeight, setKeyboardHeight] = useState<number>(0);
@@ -288,15 +454,11 @@ export default function SelectItems() {
     const address = pickup?.Address;
     const plantName = pickup?.plantName;
 
-    const itemsPayload = cartItemsArray.map((it: any) => ({
-      key: it.title,
-      heading: it.title,
-      subHeading: `${it.price}/pc`,
-      quantity: it.qty,
-      price: it.price,
-      newQtyPrice: it.qty * it.price,
-      type: it.type,
-      img: it.imgKey || "fallback.png",
+    // Format items as per backend requirement
+    // Backend expects: [{ "itemId": "catalogItemId", "quantity": 2 }, ...]
+    const itemsPayload = cartItemsArray.map((item: any) => ({
+      itemId: item.id, // Use the item id (catalog item ID from API)
+      quantity: item.qty,
     }));
 
     return {
@@ -336,9 +498,10 @@ export default function SelectItems() {
     }
 
     const form = new FormData();
-    form.append("currObj", JSON.stringify(currObj));
+    // form.append("currObj", JSON.stringify(currObj));
     form.append("location", JSON.stringify(locationCoords));
-    form.append("price", String(payable));
+    form.append("items", JSON.stringify(buildCurrObj().items));
+    // form.append("price", String(payable));
 
     const isWeb = Platform.OS === "web";
 
@@ -664,12 +827,13 @@ export default function SelectItems() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.tabs}
         >
-          {SERVICES.map((service) => {
-            const isActive = service.key === selected;
+          {SERVICE_OPTIONS.map((service) => {
+            const isActive = service.slug === selected;
+            const iconName = SERVICE_ICONS[service.slug] || "list-outline";
             return (
               <TouchableOpacity
-                key={service.key}
-                onPress={() => setSelected(service.key)}
+                key={service.slug}
+                onPress={() => setSelected(service.slug)}
                 style={[
                   styles.tab,
                   {
@@ -679,7 +843,7 @@ export default function SelectItems() {
                 ]}
               >
                 <Ionicons
-                  name={service.icon as any}
+                  name={iconName as any}
                   size={18}
                   color={isActive ? "#fff" : theme.text}
                 />
@@ -707,15 +871,23 @@ export default function SelectItems() {
             padding: 16,
             paddingBottom: 300 + keyboardHeight,
           }}
+          onScroll={({ nativeEvent }) => {
+            if (isCloseToBottom(nativeEvent)) {
+              loadMoreItems();
+            }
+          }}
+          scrollEventThrottle={200}
         >
           <Text style={[styles.sectionTitle, { color: theme.text }]}>
             Available Items
           </Text>
 
           <View style={styles.smallRowList}>
-            {availableItems.length === 0 && (
+            {servicesLoading || selectedService.loading ? (
+              <Text style={{ color: theme.subText }}>Loading items...</Text>
+            ) : availableItems.length === 0 ? (
               <Text style={{ color: theme.subText }}>No items available</Text>
-            )}
+            ) : null}
 
             {availableItems.map((item) => (
               <View
@@ -727,19 +899,25 @@ export default function SelectItems() {
               >
                 <Image
                   source={item.img}
-                  style={{ width: 42, height: 42, borderRadius: 8 }}
+                  style={{ width: 56, height: 56, borderRadius: 10 }}
                   resizeMode="contain"
                 />
 
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, marginLeft: 12 }}>
                   <Text
                     style={[styles.smallTitle, { color: theme.text }]}
                     numberOfLines={1}
                   >
                     {item.title}
                   </Text>
-                  <Text style={[styles.smallPrice, { color: theme.subText }]}>
+                  <Text style={[styles.smallPrice, { color: theme.primary }]}>
                     ₹{item.price}
+                  </Text>
+                  <Text
+                    style={[styles.smallDescription, { color: theme.subText }]}
+                    numberOfLines={1}
+                  >
+                    {item.displayPrice}
                   </Text>
                 </View>
 
@@ -761,7 +939,7 @@ export default function SelectItems() {
                     { backgroundColor: theme.primary },
                   ]}
                 >
-                  <Ionicons name="add" size={16} color="#fff" />
+                  <Ionicons name="add" size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
             ))}
@@ -843,6 +1021,12 @@ export default function SelectItems() {
                   </View>
                 </View>
               ))}
+            </View>
+          )}
+
+          {selectedService.hasNextPage && selectedService.loading && (
+            <View style={styles.loadingMoreContainer}>
+              <Text style={{ color: theme.subText }}>Loading more items…</Text>
             </View>
           )}
 
@@ -1157,7 +1341,8 @@ const styles = StyleSheet.create({
   },
   smallEmoji: { fontSize: 24, width: 36, textAlign: "center" },
   smallTitle: { fontSize: 14, fontWeight: "600", flexShrink: 1 },
-  smallPrice: { fontSize: 13, marginTop: 2 },
+  smallPrice: { fontSize: 14, marginTop: 2, fontWeight: "700" },
+  smallDescription: { fontSize: 12, marginTop: 2 },
   smallAddBtn: {
     width: 36,
     height: 36,
@@ -1386,6 +1571,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  loadingMoreContainer: {
+    paddingVertical: 14,
     alignItems: "center",
     justifyContent: "center",
   },
