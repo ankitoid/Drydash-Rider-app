@@ -39,12 +39,17 @@ interface StatusHistory {
 }
 
 interface OrderItem {
-  _id: string;
-  heading: string;
-  subHeading: string;
-  quantity: number;
+  itemId: {
+    _id: string;
+    type: string;
+    images: string[];
+    videos: string[];
+  };
+
+  label: string;
   price: number;
-  newQtyPrice: number;
+  unit: string;
+  quantity: number;
 }
 
 interface OrderLocation {
@@ -262,6 +267,12 @@ export default function DeliveredOrderDetails() {
       });
 
       const json = await res.json().catch(() => null);
+
+      console.log("FULL ORDER API RESPONSE =>", JSON.stringify(json, null, 2));
+
+      console.log("ORDER ITEMS =>", json?.items);
+
+      console.log("FIRST ITEM =>", JSON.stringify(json?.items?.[0], null, 2));
 
       if (!res.ok) {
         throw new Error((json && json.message) || "Failed to fetch order");
@@ -562,7 +573,7 @@ export default function DeliveredOrderDetails() {
     Number(String(v).replace(/[^\d.-]/g, "")) || 0;
 
   const subtotal = order.items.reduce(
-    (acc, it) => acc + parseNumber(it.newQtyPrice),
+    (acc, it) => acc + parseNumber(it.price),
     0,
   );
 
@@ -748,11 +759,11 @@ export default function DeliveredOrderDetails() {
       <View style={[styles.card, { backgroundColor: theme.card }]}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>Items</Text>
 
-        {order.items.map((item) => (
+        {order.items.map((item, index) => (
           <ItemRow
-            key={item._id}
-            label={`${item.heading}  x  ${item.quantity}`}
-            price={`₹${item.newQtyPrice}`}
+            key={item.itemId?._id || index}
+            label={`${item.label} x ${item.quantity}`}
+            price={`₹${item.price}`}
             theme={theme}
           />
         ))}
