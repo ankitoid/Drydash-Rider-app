@@ -51,15 +51,19 @@ export default function Pickup() {
 
       const data = await res.json();
 
-      setPickups([
-        ...data.Pickups.map((el: any) => {
-          return {
-            _id: el?._id,
-            Name: el?.Name,
-            Address: el.Address,
-          };
-        }),
-      ]);
+      if (data && Array.isArray(data.Pickups)) {
+        setPickups([
+          ...data.Pickups.map((el: any) => {
+            return {
+              _id: el?._id,
+              Name: el?.Name,
+              Address: el.Address,
+            };
+          }),
+        ]);
+      } else {
+        setPickups([]);
+      }
     } finally {
       setRefreshing(false);
     }

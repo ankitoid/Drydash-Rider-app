@@ -501,6 +501,79 @@ export const TaskNavigationMap = ({
     return () => clearInterval(id);
   }, [taskId]);
 
+  const saveAndSwitch = async (existingLeg: any) => {
+    if (!rider?._id || !destination || !currentLocation) {
+      Alert.alert("Location unavailable", "Please wait for location to load.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const completed = await trackingLegService.completeActiveLeg(
+        currentLocation ?? undefined,
+      );
+      await locationService.stopTracking();
+      socket.emit("taskNavigationEnded", {
+        riderId: rider._id,
+        trackingLegId: completed?.id,
+        taskId: existingLeg.taskId,
+        taskType: existingLeg.type,
+        totalDistanceKm: completed?.totalDistanceKm ?? existingLeg.totalDistanceKm,
+      });
+
+      if (completed?.id) {
+        fetch(`${API_BASE}/location/tracking/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            riderId: rider._id,
+            trackingLegId: completed.id,
+            taskId: existingLeg.taskId,
+            taskType: existingLeg.type,
+            totalDistanceKm: completed.totalDistanceKm,
+            endLocation: completed.endLocation ?? currentLocation,
+          }),
+        }).catch((httpErr) => {
+          console.warn("Tracking completion sync failed", httpErr);
+        });
+      }
+
+      const batteryPrompted = await AsyncStorage.getItem("battery_opt_prompted");
+      if (Platform.OS === "android" && !batteryPrompted) {
+        await promptBatteryOptimization();
+        await AsyncStorage.setItem("battery_opt_prompted", "true");
+      }
+
+      await locationService.updateConfig({ updateInterval: 120000, distanceFilter: 50 });
+      await locationService.setCachedUser(rider);
+      const leg = await trackingLegService.startLeg({
+        taskId,
+        riderId: rider._id,
+        type: taskType,
+        destination,
+        destinationLabel,
+        startLocation: currentLocation,
+      });
+      await locationService.startTracking();
+      await fetchRoute(currentLocation, "initial");
+      focusOnRider(currentLocation);
+      socket.emit("taskNavigationStarted", {
+        riderId: rider._id,
+        trackingLegId: leg.id,
+        taskId,
+        taskType,
+        destination,
+      });
+      setActive(true);
+      setDistanceKm(0);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch (err) {
+      console.error("Save and switch navigation failed", err);
+      Alert.alert("Tracking Error", "Could not switch navigation tasks.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const startNavigation = async () => {
     if (!rider?._id || !destination || !currentLocation) {
       Alert.alert("Location unavailable", "Please wait for location to load.");
@@ -525,7 +598,17 @@ export const TaskNavigationMap = ({
         if (existingLeg.taskId !== taskId || existingLeg.type !== taskType) {
           Alert.alert(
             "Navigation already active",
-            "Another task is already being tracked. Please complete that task before starting a new one.",
+            "Another task is already being tracked. Do you want to switch to this task? This will save the distance travelled for the current active task.",
+            [
+              { text: "Cancel", style: "cancel" },
+              {
+                text: "Switch Task",
+                onPress: () => {
+                  saveAndSwitch(existingLeg);
+                },
+              },
+            ],
+            { cancelable: true }
           );
           return;
         }
