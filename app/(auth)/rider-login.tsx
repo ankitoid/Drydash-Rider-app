@@ -15,7 +15,7 @@ import {
   View,
 } from "react-native";
 
-const API_URL = "https://api.drydash.in/api/v1/auth";
+const API_URL = "https://api.shiptos.com/api/v1/auth";
 
 export default function RiderLogin() {
   const [phone, setPhone] = useState("");
@@ -53,7 +53,7 @@ export default function RiderLogin() {
     if (phone.length !== 10) {
       Alert.alert(
         "Invalid Mobile Number",
-        "Please enter a valid 10-digit mobile number."
+        "Please enter a valid 10-digit mobile number.",
       );
       return;
     }
@@ -78,7 +78,7 @@ export default function RiderLogin() {
     } catch (error: any) {
       Alert.alert(
         "Unable to Send OTP",
-        error.message || "Please try again after some time."
+        error.message || "Please try again after some time.",
       );
     } finally {
       setLoading(false);
@@ -88,12 +88,12 @@ export default function RiderLogin() {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0f0d" />
-      
-      <KeyboardAvoidingView 
+
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -115,7 +115,7 @@ export default function RiderLogin() {
                 </View>
               </View>
             </View> */}
-            
+
             <Text style={styles.brandTitle}>Shiptos</Text>
             <View style={styles.captainBadge}>
               <View style={styles.badgeDot} />
@@ -145,7 +145,7 @@ export default function RiderLogin() {
               <View style={styles.inputHeader}>
                 <Text style={styles.inputLabel}>Mobile Number</Text>
               </View>
-              
+
               <View style={[
                 styles.phoneInputWrapper,
                 isFocused && styles.phoneInputFocused

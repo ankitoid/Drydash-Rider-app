@@ -17,6 +17,7 @@ interface Props {
   onCancel: () => void;
   onImageCaptured: (uri: string) => void;
   skipCapture: () => void;
+  allowSkip?: boolean;
 }
 
 export default function CaptureImageModal({
@@ -24,8 +25,9 @@ export default function CaptureImageModal({
   onCancel,
   skipCapture,
   onImageCaptured,
+  allowSkip = true,
 }: Props) {
-  const cameraRef = useRef<CameraView | null>(null); // ✅ FIXED
+  const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [photoUri, setPhotoUri] = useState<string | null>(null);
 
@@ -78,9 +80,13 @@ export default function CaptureImageModal({
                 <Text style={styles.cancel}>Cancel</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity onPress={() => skipCapture()}>
-                <Text style={styles.cancel}>Skip Capture</Text>
-              </TouchableOpacity>
+              {allowSkip ? (
+                <TouchableOpacity onPress={() => skipCapture()}>
+                  <Text style={styles.cancel}>Skip Capture</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.skipPlaceholder} />
+              )}
 
               <TouchableOpacity
                 style={styles.captureBtn}
@@ -117,8 +123,6 @@ export default function CaptureImageModal({
   );
 }
 
-/* ================= STYLES ================= */
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -144,6 +148,9 @@ const styles = StyleSheet.create({
   cancel: {
     color: "#fff",
     fontSize: 16,
+  },
+  skipPlaceholder: {
+    width: 96,
   },
   preview: {
     flex: 1,

@@ -140,7 +140,7 @@ export default function Wallet() {
         <View style={[styles.featureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
           <View>
             <Text style={[styles.featureTitle, { color: theme.subText }]}>
-              Today's Earnings
+              Today&apos;s Earnings
             </Text>
             <Text style={[styles.featureAmount, { color: theme.primary }]}>
               ₹2,450

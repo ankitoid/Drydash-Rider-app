@@ -7,6 +7,7 @@ import { registerForPushNotifications } from "@/services/pushNotifications";
 import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { InteractionManager } from "react-native";
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true, // ✅ REQUIRED (new)
@@ -56,7 +57,7 @@ export const NotificationProvider = ({
   };
 
   const fcmTokenRef = useRef<string | null>(null);
-  const handledInitialResponseRef = useRef(false);
+  const registeredUserRef = useRef<string | null>(null);
 
   const notify = ({ title, message, duration = 500, data }: any) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -114,8 +115,10 @@ export const NotificationProvider = ({
 
   useEffect(() => {
     let mounted = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const init = async () => {
       if (!user || !token) return;
+      if (registeredUserRef.current === user._id) return;
 
       try {
         await setupNotificationChannel();
@@ -124,8 +127,9 @@ export const NotificationProvider = ({
         if (!fcmToken) return;
 
         fcmTokenRef.current = fcmToken;
+        registeredUserRef.current = user._id;
 
-        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
+        await fetch("https://api.shiptos.com/api/v1/rider/push-tokens", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -141,10 +145,16 @@ export const NotificationProvider = ({
       }
     };
 
-    if (mounted) init();
+    const task = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(() => {
+        if (mounted) init();
+      }, 1500);
+    });
 
     return () => {
       mounted = false;
+      if (timer) clearTimeout(timer);
+      task.cancel();
     };
   }, [user?._id, token]);
 
@@ -156,7 +166,7 @@ export const NotificationProvider = ({
       if (!t) return;
 
       try {
-        await fetch("https://api.drydash.in/api/v1/rider/push-tokens", {
+        await fetch("https://api.shiptos.com/api/v1/rider/push-tokens", {
           method: "DELETE",
           headers: {
             "Content-Type": "application/json",
@@ -168,6 +178,7 @@ export const NotificationProvider = ({
         console.warn("Failed to remove push token on logout:", err);
       } finally {
         fcmTokenRef.current = null;
+        registeredUserRef.current = null;
       }
     };
 
@@ -196,7 +207,7 @@ export const NotificationProvider = ({
           duration: 3000,
         });
 
-        playNotificationSound().catch(() => {});
+        playNotificationSound().catch(() => { });
       },
     );
 
@@ -215,11 +226,12 @@ export const NotificationProvider = ({
 
   useEffect(() => {
     if (!user?._id) return;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
-    const interval = setInterval(async () => {
+    const fetchLatest = async () => {
       try {
         const res = await fetch(
-          `https://api.drydash.in/api/v1/notifications/${user._id}`,
+          `https://api.shiptos.com/api/v1/notifications/${user._id}`,
         );
 
         const data = await res.json();
@@ -239,9 +251,17 @@ export const NotificationProvider = ({
       } catch (err) {
         console.log("Polling error:", err);
       }
-    }, 5000); // every 5 sec
+    };
 
-    return () => clearInterval(interval);
+    const timer = setTimeout(() => {
+      fetchLatest();
+      interval = setInterval(fetchLatest, 30000);
+    }, 10000);
+
+    return () => {
+      clearTimeout(timer);
+      if (interval) clearInterval(interval);
+    };
   }, [user?._id]);
 
   return (

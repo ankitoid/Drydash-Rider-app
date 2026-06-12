@@ -9,7 +9,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useTheme } from "../../../../context/ThemeContext";
 
@@ -20,7 +20,7 @@ type Pickup = {
   Address: string;
 };
 
-const API_URL = "https://api.drydash.in/api/v1/rider";
+const API_URL = "https://api.shiptos.com/api/v1/rider";
 
 /* ================= SCREEN ================= */
 
@@ -51,13 +51,15 @@ export default function Pickup() {
 
       const data = await res.json();
 
-      setPickups([...data.Pickups.map((el: any) => {
-        return {
-          _id: el?._id,
-          Name: el?.Name,
-          Address: el.Address
-        }
-      })]);
+      setPickups([
+        ...data.Pickups.map((el: any) => {
+          return {
+            _id: el?._id,
+            Name: el?.Name,
+            Address: el.Address,
+          };
+        }),
+      ]);
     } finally {
       setRefreshing(false);
     }
@@ -66,7 +68,9 @@ export default function Pickup() {
   useFocusEffect(
     useCallback(() => {
       if (completedOrderId) {
-        setPickups((prev: any) => prev.filter((p: any) => p?._id !== completedOrderId));
+        setPickups((prev: any) =>
+          prev.filter((p: any) => p?._id !== completedOrderId),
+        );
         router.setParams({ completedOrderId: undefined });
       }
 
@@ -261,7 +265,9 @@ export default function Pickup() {
               styles.card,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
-            onPress={() => router.push(`/(rider)/order/pickup/${item._id}`)}
+            onPress={() =>
+              router.push(`/(rider)/order/pickup/navigation/${item._id}`)
+            }
           >
             <View style={styles.iconWrap}>
               <Ionicons name="location" size={20} color={theme.primary} />

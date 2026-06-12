@@ -37,7 +37,7 @@ type Delivery = {
   lng: number;
 };
 
-const API_URL = "https://api.drydash.in/api/v1";
+const API_URL = "https://api.shiptos.com/api/v1";
 
 /* ================= SCREEN ================= */
 
@@ -89,7 +89,6 @@ export default function Pickup() {
     }
 
     if (deliveries.length === 0) {
-      console.log("❌ No deliveries");
       return;
     }
 
@@ -182,8 +181,6 @@ export default function Pickup() {
       );
 
       const data = await res.json();
-
-      console.log("this is the dataa==>>>", data);
 
       if (!res.ok) {
         throw new Error(data.message || "Failed to fetch orders");
@@ -408,7 +405,9 @@ export default function Pickup() {
               styles.card,
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}
-            onPress={() => router.push(`/(rider)/order/delivered/${p.id}`)}
+            onPress={() =>
+              router.push(`/(rider)/order/delivered/navigation/${p.id}`)
+            }
           >
             <View style={styles.iconWrap}>
               <Ionicons name="location" size={20} color={theme.primary} />

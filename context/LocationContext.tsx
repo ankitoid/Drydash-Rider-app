@@ -5,7 +5,13 @@ import { socket } from "@/services/socket";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { Alert, AppState, AppStateStatus, Platform } from "react-native";
+import {
+  Alert,
+  AppState,
+  AppStateStatus,
+  InteractionManager,
+  Platform,
+} from "react-native";
 import { useAuth } from "./useAuth";
 
 interface LocationContextType {
@@ -31,31 +37,56 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const trackingRef = useRef(false);
   const lockRef = useRef(false);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const foregroundSubscriptionRef =
+    useRef<Location.LocationSubscription | null>(null);
 
   const [isTracking, setIsTracking] = useState(false);
   const [lastLocation, setLastLocation] =
     useState<Location.LocationObject | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /* ---------- FOREGROUND WATCHER (UI only) ---------- */
+  /* ---------- FOREGROUND LOCATION ---------- */
+
+  const stopForegroundWatcher = () => {
+    foregroundSubscriptionRef.current?.remove();
+    foregroundSubscriptionRef.current = null;
+  };
+
+  const startForegroundWatcher = async () => {
+    if (foregroundSubscriptionRef.current) return;
+
+    const { status } = await Location.getForegroundPermissionsAsync();
+    if (status !== "granted") return;
+
+    foregroundSubscriptionRef.current = await Location.watchPositionAsync(
+      {
+        accuracy: Location.Accuracy.Balanced,
+        distanceInterval: 25,
+        timeInterval: 15000,
+      },
+      (location) => {
+        setLastLocation(location);
+      },
+    );
+  };
 
   useEffect(() => {
-    const watchLocation = async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
+    let cancelled = false;
+
+    const task = InteractionManager.runAfterInteractions(async () => {
+      const { status } = await Location.getForegroundPermissionsAsync();
       if (status !== "granted") return;
 
-      await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.High,
-          distanceInterval: 10,
-        },
-        (location) => {
-          setLastLocation(location);
-        },
-      );
-    };
+      const location = await Location.getLastKnownPositionAsync();
+      if (!cancelled && location) {
+        setLastLocation(location);
+      }
+    });
 
-    watchLocation();
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
   }, []);
 
   /* ---------- AUTO-RESUME ON APP REOPEN ---------- */
@@ -65,11 +96,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     if (!user?._id) return;
+    let cancelled = false;
 
     const checkAndResume = async () => {
       try {
         const wasTracking = await locationService.wasTrackingBeforeKill();
-        if (!wasTracking) return;
+        if (cancelled || !wasTracking) return;
 
         console.log("🔄 Auto-resume: tracking was active before kill, restarting...");
 
@@ -92,6 +124,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
         trackingRef.current = true;
         setIsTracking(true);
+        await startForegroundWatcher();
         startWatchdog(); // Start the watchdog after auto-resume
         console.log("✅ Auto-resume: tracking restored");
       } catch (err) {
@@ -99,7 +132,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     };
 
-    checkAndResume();
+    const task = InteractionManager.runAfterInteractions(checkAndResume);
+
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
   }, [user?._id]);
 
   /* ---------- WATCHDOG ---------- */
@@ -154,7 +192,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Cleanup watchdog on unmount
   useEffect(() => {
-    return () => stopWatchdog();
+    return () => {
+      stopWatchdog();
+      stopForegroundWatcher();
+    };
   }, []);
 
   /* ---------- START TRACKING ---------- */
@@ -255,6 +296,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       trackingRef.current = true;
       setIsTracking(true);
       setError(null);
+      await startForegroundWatcher();
 
       // Start the watchdog to guard against notification dismissal
       startWatchdog();
@@ -286,6 +328,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       stopWatchdog();
 
       await locationService.stopTracking();
+      stopForegroundWatcher();
 
       trackingRef.current = false;
       setIsTracking(false);

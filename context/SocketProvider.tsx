@@ -4,14 +4,14 @@ import { useAuth } from "@/context/useAuth";
 import { playNotificationSound } from "@/services/notificationSound";
 import { socket } from "@/services/socket";
 import { useEffect } from "react";
-import { AppState } from "react-native";
+import { AppState, InteractionManager } from "react-native";
 
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
   const { notify } = useNotification();
   const { setPickups, setDeliveries } = useRiderData();
-  const API_URL = "https://api.drydash.in/api/v1/rider";
-  const API_URL_ORDER = "https://api.drydash.in/api/v1";
+  const API_URL = "https://api.shiptos.com/api/v1/rider";
+  const API_URL_ORDER = "https://api.shiptos.com/api/v1";
 
 
   const getPickups = async () => {
@@ -26,7 +26,9 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       const data = await res.json();
       //   console.log("user ifo---> ", user)
       //  console.log("data------------------------------------------>", data);
-      const filteredPickups = (data?.Pickups).filter((el: any) => el.riderName === user.name)
+      const filteredPickups = (data?.Pickups).filter(
+        (el: any) => el.riderName === user.name,
+      );
       setPickups([...filteredPickups]);
     } finally {
       // setRefreshing(false);
@@ -39,7 +41,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const res = await fetch(
         `${API_URL_ORDER}/getOrdersByFilter?email=${encodeURIComponent(
-          user.email
+          user.email,
         )}&status=delivery+rider+assigned&limit=1000&page=1`,
         { headers: { "Content-Type": "application/json" } },
       );
@@ -47,17 +49,22 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       const Orderdata = await res.json();
       console.log("data------------------------------------------>", Orderdata);
 
-      const filteredOrders = (Orderdata?.orders).filter((el: any) => el.riderName === user.name)
-      console.log("filteredOrders------------------------------------------>", filteredOrders);
+      const filteredOrders = (Orderdata?.orders).filter(
+        (el: any) => el.riderName === user.name,
+      );
+      console.log(
+        "filteredOrders------------------------------------------>",
+        filteredOrders,
+      );
       const mapOrder = filteredOrders.map((el: any) => {
         return {
           id: el?._id,
           orderId: el?.order_id,
           name: el?.customerName,
-          address:el?.address,
-        }
-      })
-      setDeliveries([...mapOrder])
+          address: el?.address,
+        };
+      });
+      setDeliveries([...mapOrder]);
     } finally {
       // setRefreshing(false);
     }
@@ -206,19 +213,29 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       },
     );
 
-    // Make sure socket is connected (avoid double connect)
-    if (!socket.connected) {
-      console.log("🔌 [SocketProvider] connecting socket...");
-      socket.connect();
-    } else {
-      // Re-join rooms if the socket was already connected (e.g. hot reload)
-      socket.emit("joinRider", { riderId });
-      socket.emit("joinAdmin");
-    }
+    let connectTimer: ReturnType<typeof setTimeout> | null = null;
+    const connectTask = InteractionManager.runAfterInteractions(() => {
+      connectTimer = setTimeout(() => {
+        if (!isMounted) return;
+
+        // Make sure socket is connected (avoid double connect)
+        if (!socket.connected) {
+          console.log("🔌 [SocketProvider] connecting socket...");
+          socket.connect();
+        } else {
+          // Re-join rooms if the socket was already connected (e.g. hot reload)
+          socket.emit("joinRider", { riderId });
+          socket.emit("joinAdmin");
+        }
+
+      }, 1000);
+    });
 
     // cleanup
     return () => {
       isMounted = false;
+      if (connectTimer) clearTimeout(connectTimer);
+      connectTask.cancel();
       console.log("🧹 [SocketProvider] cleaning up socket listeners");
       // turn off only the events we attached
       [
@@ -230,6 +247,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         "reconnect_error",
         "reconnect_failed",
         "riderAssignedPickup",
+        "assignedPickup",
         "assignOrder",
         "locationUpdateAck",
       ].forEach((ev) => {

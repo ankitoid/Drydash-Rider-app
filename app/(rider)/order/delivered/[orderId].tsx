@@ -1,7 +1,10 @@
 // app/(rider)/order/delivered/[orderId].tsx
 import CaptureImageModal from "@/components/Modals/CaptureImageModal";
 import ConfirmModal from "@/components/Modals/ConfirmModal";
+import FollowupPickupModal from "@/components/Modals/FollowupPickupModal";
 import { useAuth } from "@/context/useAuth";
+import { createFollowupPickupApi } from "@/services/api/followupPickup";
+import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker, {
   DateTimePickerAndroid,
@@ -9,9 +12,11 @@ import DateTimePicker, {
 import * as ImageManipulator from "expo-image-manipulator";
 import { SaveFormat } from "expo-image-manipulator";
 import { router, useLocalSearchParams } from "expo-router";
+import LottieView from "lottie-react-native";
 import moment from "moment";
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   BackHandler,
   Dimensions,
   FlatList,
@@ -31,6 +36,7 @@ import { useTheme } from "../../../../context/ThemeContext";
 
 interface StatusHistory {
   intransit: string | null;
+  reprocessing: string | null;
   processing: string | null;
   readyForDelivery: string | null;
   deliveryriderassigned: string | null;
@@ -39,6 +45,7 @@ interface StatusHistory {
 }
 
 interface OrderItem {
+  lineId?: string;
   itemId: {
     _id: string;
     type: string;
@@ -50,6 +57,8 @@ interface OrderItem {
   price: number;
   unit: string;
   quantity: number;
+  intransitImages?: string[];
+  readyForDeliveryImages?: string[];
 }
 
 interface OrderLocation {
@@ -65,6 +74,8 @@ interface OrderDetails {
   address: string;
   items: OrderItem[];
   price: number;
+  totalAmount: number;
+  discountAmount: number;
   status: string;
   statusHistory: StatusHistory;
   orderLocation?: OrderLocation;
@@ -74,8 +85,21 @@ interface OrderDetails {
   riderDate: string;
   rescheduledDate?: string | null;
   intransitImage?: string[];
+  ready_for_delivery_images?: string[];
   isPaid?: boolean;
 }
+
+interface QrPaymentPayload {
+  qrId: string;
+  qrImageUrl: string;
+  qrString: string;
+  amount: number;
+  generatedAt?: string;
+  expiresAt?: string;
+  remainingSeconds?: number;
+}
+
+type DeliveryActionMode = "deliver" | "cash" | null;
 
 /* ===================== COMPONENT ===================== */
 
@@ -87,11 +111,25 @@ export default function DeliveredOrderDetails() {
   const [delivering, setDelivering] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [deliveryImage, setDeliveryImage] = useState<string | null>(null);
+  const [showPaymentSuccessMedia, setShowPaymentSuccessMedia] = useState(false);
+  const [showFollowupPickupPrompt, setShowFollowupPickupPrompt] =
+    useState(false);
+  const [creatingFollowupPickup, setCreatingFollowupPickup] = useState(false);
+  const [paymentOptionVisible, setPaymentOptionVisible] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
+  const [qrLoading, setQrLoading] = useState(false);
+  const [qrCancelling, setQrCancelling] = useState(false);
+  const [qrRemainingSeconds, setQrRemainingSeconds] = useState(0);
+  const [qrPayment, setQrPayment] = useState<QrPaymentPayload | null>(null);
+  const [actionMode, setActionMode] = useState<DeliveryActionMode>(null);
 
   const [rescheduleVisible, setRescheduleVisible] = useState(false);
   const [orderToReschedule, setOrderToReschedule] =
     useState<OrderDetails | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
+  const [returnVisible, setReturnVisible] = useState(false);
+  const [returningOrder, setReturningOrder] = useState(false);
+  const [moreVisible, setMoreVisible] = useState(false);
 
   const [galleryVisible, setGalleryVisible] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -99,12 +137,24 @@ export default function DeliveredOrderDetails() {
   const { theme, isDark } = useTheme();
   const { user } = useAuth();
 
-  const API_URL = "https://api.drydash.in/api/v1/auth";
-  const base_url = "https://api.drydash.in/api/v1";
+  const API_URL = "https://api.shiptos.com/api/v1/auth";
+  const base_url = "https://api.shiptos.com/api/v1";
   const wattiUri = "https://live-server-101289.wati.io/api/v1";
   const token =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1bmlxdWVfbmFtZSI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwibmFtZWlkIjoiYXl1c2hzaW5naDg0MjAxOEBnbWFpbC5jb20iLCJlbWFpbCI6ImF5dXNoc2luZ2g4NDIwMThAZ21haWwuY29tIiwiYXV0aF90aW1lIjoiMTIvMDgvMjAyNSAwNzoyMzo1MyIsInRlbmFudF9pZCI6IjEwMTI4OSIsImRiX25hbWUiOiJtdC1wcm9kLVRlbmFudHMiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOlsiVEVNUExBVEVfTUFOQUdFUiIsIkRFVkVMT1BFUiIsIkFVVE9NQVRJT05fTUFOQUdFUiJdLCJleHAiOjI1MzQwMjMwMDgwMCwiaXNzIjoiQ2xhcmVfQUkiLCJhdWQiOiJDbGFyZV9BSSJ9.NpVe1fi-RXRuNgCAGzFQLZT6dE7Y-rvlx1SYxLKZ_m4";
   const successGreen = "#22C55E";
+  const paymentSuccessTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const beforeImages =
+    order?.intransitImage?.length
+      ? order.intransitImage
+      : order?.items?.flatMap((item) => item.intransitImages || []) || [];
+  const afterImages =
+    order?.ready_for_delivery_images?.length
+      ? order.ready_for_delivery_images
+      : order?.items?.flatMap((item) => item.readyForDeliveryImages || []) ||
+        [];
 
   /* ===================== HELPERS ===================== */
 
@@ -122,21 +172,6 @@ export default function DeliveredOrderDetails() {
       xhr.open("GET", uri, true);
       xhr.send(null);
     });
-
-  const handleNavigate = () => {
-    if (!order?.orderLocation) return;
-
-    const { latitude, longitude } = order.orderLocation;
-
-    const url =
-      Platform.OS === "ios"
-        ? `maps://?daddr=${latitude},${longitude}`
-        : `google.navigation:q=${latitude},${longitude}`;
-
-    Linking.openURL(url).catch((err) =>
-      console.error("Failed to open map", err),
-    );
-  };
 
   const normalizePhoneForWhatsApp = (raw: any) => {
     if (!raw) return null;
@@ -268,12 +303,6 @@ export default function DeliveredOrderDetails() {
 
       const json = await res.json().catch(() => null);
 
-      console.log("FULL ORDER API RESPONSE =>", JSON.stringify(json, null, 2));
-
-      console.log("ORDER ITEMS =>", json?.items);
-
-      console.log("FIRST ITEM =>", JSON.stringify(json?.items?.[0], null, 2));
-
       if (!res.ok) {
         throw new Error((json && json.message) || "Failed to fetch order");
       }
@@ -309,66 +338,249 @@ export default function DeliveredOrderDetails() {
     }
   };
 
-  // Upload image to server — handles web & mobile and uses compressed image
-  const uploadImage = async () => {
+  const navigateToDeliveredTab = () => {
+    router.replace({
+      pathname: "/(rider)/(tabs)/delivered",
+      params: { completedOrderId: orderId },
+    });
+  };
+
+  const uploadDeliveryProof = async () => {
+    if (!deliveryImage || deliveryImage === "uri") {
+      throw new Error("Delivery image is required");
+    }
+
+    const formData = new FormData();
+    const isWeb = Platform.OS === "web";
+    const filename =
+      deliveryImage.split("/").pop() || `delivery_${Date.now()}.jpg`;
+
+    if (isWeb) {
+      const blob = await uriToBlob(deliveryImage);
+      formData.append("image", blob as any, filename);
+    } else {
+      formData.append("image", {
+        uri: deliveryImage,
+        name: filename,
+        type: "image/jpeg",
+      } as any);
+    }
+
+    const res = await fetch(`${base_url}/rider/uploadDeliverImage/${orderId}`, {
+      method: "POST",
+      body: formData,
+      headers: {
+        "x-client-type": "mobile",
+        Accept: "application/json",
+      },
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(json?.message || "Failed to upload image");
+    }
+
+    return json;
+  };
+
+  const markCashPaymentPaid = async () => {
+    if (!order?.order_id) {
+      throw new Error("Order ID missing");
+    }
+
+    const res = await fetch(
+      `${base_url}/payments/${order.order_id}/mark-paid`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+        body: JSON.stringify({ paymentMode: "cash" }),
+      },
+    );
+
+    const json = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      throw new Error(json?.message || "Failed to mark cash payment as paid");
+    }
+
+    return json;
+  };
+
+  const handleSkipFollowupPickup = () => {
+    setShowFollowupPickupPrompt(false);
+    navigateToDeliveredTab();
+  };
+
+  const handleCreateFollowupPickup = async () => {
+    if (!user?._id || !user?.name || !orderId) {
+      Alert.alert("Unable to create pickup", "Rider details are missing.");
+      return;
+    }
+
     try {
-      console.log("this is the delivery image", deliveryImage);
+      setCreatingFollowupPickup(true);
 
-      // If user skipped capture, deliveryImage may be "uri"
-      if (deliveryImage && deliveryImage !== "uri") {
-        // Build FormData
-        const formData = new FormData();
-        const isWeb = Platform.OS === "web";
-        const filename =
-          deliveryImage.split("/").pop() || `delivery_${Date.now()}.jpg`;
+      await createFollowupPickupApi({
+        apiBaseUrl: base_url,
+        orderId,
+        riderId: user._id,
+        riderName: user.name,
+      });
 
-        if (isWeb) {
-          // convert to Blob and append with filename
-          const blob = await uriToBlob(deliveryImage);
-          formData.append("image", blob as any, filename);
-          console.log("Appended web blob", filename, (blob as any).size);
-        } else {
-          // Mobile: append file object
-          formData.append("image", {
-            uri: deliveryImage,
-            name: filename,
-            type: "image/jpeg",
-          } as any);
-          console.log("Appended mobile file", filename, deliveryImage);
-        }
+      setShowFollowupPickupPrompt(false);
+      router.replace({
+        pathname: "/(rider)/(tabs)/pickup",
+        params: { createdFromOrderId: orderId },
+      });
+    } catch (error) {
+      console.error("Follow-up pickup creation error:", error);
+      Alert.alert(
+        "Unable to create pickup",
+        error instanceof Error
+          ? error.message
+          : "Please try again in a moment.",
+      );
+    } finally {
+      setCreatingFollowupPickup(false);
+    }
+  };
 
-        const res = await fetch(
-          `${base_url}/rider/uploadDeliverImage/${orderId}`,
-          {
-            method: "POST",
-            body: formData,
-            headers: {
-              // Do not set Content-Type here; let browser/native set the correct multipart boundary
-              "x-client-type": "mobile",
-              Accept: "application/json",
-            },
-          },
-        );
+  const completeDeliveredFlow = async ({
+    requireProofImage = false,
+    markCashPaid = false,
+  }: {
+    requireProofImage?: boolean;
+    markCashPaid?: boolean;
+  }) => {
+    try {
+      setDelivering(true);
+      setShowConfirm(false);
+      setPaymentOptionVisible(false);
+      setQrVisible(false);
 
-        const json = await res.json().catch(() => null);
-        console.log("Upload image response:", json);
+      if (requireProofImage) {
+        await uploadDeliveryProof();
+      }
 
-        if (!res.ok) {
-          console.error("Upload failed. Response not OK.", res.status, json);
-          throw new Error(json?.message || "Failed to upload image");
-        }
-      } else {
-        console.log(
-          "Skipping image upload (no image or user skipped capture).",
-        );
+      if (markCashPaid) {
+        await markCashPaymentPaid();
       }
 
       await updateStatusTo(orderId, "delivered");
       await sendWhatsAppTemplateDelivered();
       await getOrderDetails();
+      setShowFollowupPickupPrompt(true);
     } catch (error) {
-      console.log("Image upload error:", error);
+      console.log("Delivered flow error:", error);
       throw error;
+    } finally {
+      setDelivering(false);
+      setActionMode(null);
+      setDeliveryImage(null);
+    }
+  };
+
+  const generateQrPayment = async () => {
+    if (!order?.order_id) return;
+
+    try {
+      setQrLoading(true);
+
+      const res = await fetch(`${base_url}/qr/generate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+        body: JSON.stringify({ orderId: order.order_id }),
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.message || "Failed to generate QR");
+      }
+
+      setQrPayment(json);
+      setQrRemainingSeconds(Number(json?.remainingSeconds || 0));
+      setPaymentOptionVisible(false);
+      setQrVisible(true);
+    } catch (error) {
+      console.error("QR generation error:", error);
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
+  const closeQrPayment = async () => {
+    if (!qrPayment?.qrId) {
+      setQrVisible(false);
+      setQrPayment(null);
+      setQrRemainingSeconds(0);
+      return;
+    }
+
+    try {
+      setQrCancelling(true);
+
+      const res = await fetch(`${base_url}/qr/cancel/${qrPayment.qrId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-client-type": "mobile",
+        },
+      });
+
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(json?.message || "Failed to cancel QR");
+      }
+
+      setQrVisible(false);
+      setQrPayment(null);
+      setQrRemainingSeconds(0);
+    } catch (error) {
+      console.error("QR cancel error:", error);
+      Alert.alert("Unable to close QR", "Please try again in a moment.");
+    } finally {
+      setQrCancelling(false);
+    }
+  };
+
+  const openMoreMenu = () => {
+    setMoreVisible(true);
+  };
+
+  const openImages = () => {
+    setMoreVisible(false);
+    setGalleryIndex(0);
+    setGalleryVisible(true);
+  };
+
+  const openReturnConfirm = () => {
+    setMoreVisible(false);
+    setReturnVisible(true);
+  };
+
+  const markAsReturn = async () => {
+    setReturningOrder(true);
+    try {
+      await updateStatusTo(orderId, "reprocessing");
+
+      setReturnVisible(false);
+      router.replace({
+        pathname: "/(rider)/(tabs)/pickup",
+        params: { completedOrderId: orderId },
+      });
+    } catch (err) {
+      console.error("Error marking order as return:", err);
+    } finally {
+      setReturningOrder(false);
     }
   };
 
@@ -435,10 +647,114 @@ export default function DeliveredOrderDetails() {
 
   useEffect(() => {
     getOrderDetails();
-  }, []);
+  }, [orderId]);
 
   useEffect(() => {
+    const liveOrderId = order?.order_id ? String(order.order_id) : null;
+    if (!liveOrderId) return;
+
+    const joinOrderRoom = () => {
+      socket.emit("joinOrder", { orderId: liveOrderId });
+    };
+
+    const handlePaymentUpdate = (payload: {
+      orderId?: string;
+      paymentStatus?: string;
+      isPaid?: boolean;
+    }) => {
+      if (String(payload?.orderId) !== liveOrderId) return;
+
+      const nextPaid = Boolean(payload?.isPaid);
+      const shouldShowSuccess = !Boolean(order?.isPaid) && nextPaid;
+
+      setOrder((prev) => {
+        if (!prev) return prev;
+
+        return {
+          ...prev,
+          isPaid: nextPaid,
+        };
+      });
+
+      if (!shouldShowSuccess) return;
+
+      setQrVisible(false);
+      setQrPayment(null);
+      setQrRemainingSeconds(0);
+      setShowPaymentSuccessMedia(true);
+
+      if (paymentSuccessTimeoutRef.current) {
+        clearTimeout(paymentSuccessTimeoutRef.current);
+      }
+
+      paymentSuccessTimeoutRef.current = setTimeout(() => {
+        setShowPaymentSuccessMedia(false);
+        paymentSuccessTimeoutRef.current = null;
+      }, 3000);
+    };
+
+    if (!socket.connected) {
+      socket.connect();
+    }
+
+    joinOrderRoom();
+    socket.on("connect", joinOrderRoom);
+    socket.on("paymentUpdate", handlePaymentUpdate);
+
+    return () => {
+      socket.off("connect", joinOrderRoom);
+      socket.off("paymentUpdate", handlePaymentUpdate);
+
+      if (paymentSuccessTimeoutRef.current) {
+        clearTimeout(paymentSuccessTimeoutRef.current);
+        paymentSuccessTimeoutRef.current = null;
+      }
+    };
+  }, [order?.order_id, order?.isPaid]);
+  useEffect(() => {
+    if (!qrVisible || !qrPayment) return;
+
+    const expiresAtMs = qrPayment.expiresAt
+      ? new Date(qrPayment.expiresAt).getTime()
+      : null;
+    const initialRemaining = Number(qrPayment.remainingSeconds || 0);
+
+    const getRemainingFromServerTime = () => {
+      if (!expiresAtMs) return null;
+      return Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+    };
+
+    const firstRemaining = getRemainingFromServerTime();
+    setQrRemainingSeconds(firstRemaining ?? initialRemaining);
+
+    const intervalId = setInterval(() => {
+      const serverRemaining = getRemainingFromServerTime();
+
+      if (serverRemaining !== null) {
+        setQrRemainingSeconds(serverRemaining);
+        if (serverRemaining <= 0) {
+          clearInterval(intervalId);
+        }
+        return;
+      }
+
+      setQrRemainingSeconds((prev) => {
+        const updated = prev > 0 ? prev - 1 : 0;
+        if (updated <= 0) {
+          clearInterval(intervalId);
+        }
+        return updated;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalId);
+  }, [qrVisible, qrPayment]);
+  useEffect(() => {
     const onBackPress = () => {
+      if (returnVisible) {
+        setReturnVisible(false);
+        return true;
+      }
       if (rescheduleVisible) {
         setRescheduleVisible(false);
         setOrderToReschedule(null);
@@ -452,6 +768,10 @@ export default function DeliveredOrderDetails() {
         setShowConfirm(false);
         return true;
       }
+      if (showFollowupPickupPrompt) {
+        handleSkipFollowupPickup();
+        return true;
+      }
       if (galleryVisible) {
         setGalleryVisible(false);
         return true;
@@ -463,8 +783,20 @@ export default function DeliveredOrderDetails() {
 
     const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => sub.remove();
-  }, [rescheduleVisible, showCamera, showConfirm, galleryVisible]);
+  }, [
+    returnVisible,
+    rescheduleVisible,
+    showCamera,
+    showConfirm,
+    showFollowupPickupPrompt,
+    galleryVisible,
+  ]);
 
+  useEffect(() => {
+    if (qrRemainingSeconds <= 0) {
+      setQrVisible(false);
+    }
+  }, [qrRemainingSeconds]);
   // When CaptureImageModal returns a captured image URI, compress/manipulate it first
   const onImageCaptured = async (uri: string) => {
     try {
@@ -523,35 +855,53 @@ export default function DeliveredOrderDetails() {
     );
   }
 
-  const onDeliveredPress = () => {
+  const openDeliveredConfirmation = () => {
+    setActionMode("deliver");
+    setShowConfirm(true);
+  };
+
+  const openPaymentOptions = () => {
+    setPaymentOptionVisible(true);
+  };
+
+  const onCashPaymentPress = () => {
+    setPaymentOptionVisible(false);
+    setActionMode("cash");
+    setDeliveryImage(null);
     setShowCamera(true);
   };
 
   const skipCapture = () => {
+    if (actionMode === "cash") {
+      return;
+    }
+
     setDeliveryImage("uri");
     setShowCamera(false);
     setShowConfirm(true);
   };
 
-  const confirmDelivered = async () => {
+  const confirmPaidDelivery = async () => {
     try {
-      setDelivering(true);
-      setShowConfirm(false);
-
-      console.log("Delivered with image:", deliveryImage);
-      await uploadImage();
-
-      router.replace({
-        pathname: "/(rider)/(tabs)/delivered",
-        params: { completedOrderId: orderId },
+      await completeDeliveredFlow({
+        requireProofImage: false,
+        markCashPaid: false,
       });
     } catch (err) {
       console.error(err);
-    } finally {
-      setDelivering(false);
     }
   };
 
+  const confirmCashCollection = async () => {
+    try {
+      await completeDeliveredFlow({
+        requireProofImage: true,
+        markCashPaid: true,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
   const phoneNumber = order?.contactNo;
 
   const handleCall = () => {
@@ -560,22 +910,20 @@ export default function DeliveredOrderDetails() {
   };
 
   const handleWhatsApp = () => {
-    if (!phoneNumber) return;
+    const phone = normalizePhoneForWhatsApp(phoneNumber);
+    if (!phone) return;
 
     const message = encodeURIComponent(
       "Hello, I am your delivery rider. I am on the way to deliver your order.",
     );
 
-    Linking.openURL(`https://wa.me/${phoneNumber}?text=${message}`);
+    Linking.openURL(`https://wa.me/${phone}?text=${message}`);
   };
 
   const parseNumber = (v: any) =>
     Number(String(v).replace(/[^\d.-]/g, "")) || 0;
 
-  const subtotal = order.items.reduce(
-    (acc, it) => acc + parseNumber(it.price),
-    0,
-  );
+  const subtotal = order?.price;
 
   const fmtINR = (n: number) =>
     new Intl.NumberFormat("en-IN", {
@@ -584,21 +932,15 @@ export default function DeliveredOrderDetails() {
       maximumFractionDigits: 2,
     }).format(n);
 
-  const paid = parseNumber(order.price);
-  const discountAmount = subtotal - paid;
-  const discountPercent = subtotal > 0 ? (discountAmount / subtotal) * 100 : 0;
-  const discountLabel = `-${discountPercent}%`;
-
-  const gatherOrderImages = (): string[] => {
-    const imgs: string[] = [];
-    if (Array.isArray(order?.intransitImage) && order!.intransitImage!.length) {
-      imgs.push(...(order!.intransitImage || []));
-    }
-    if (deliveryImage && deliveryImage !== "uri") {
-      imgs.unshift(deliveryImage);
-    }
-    return imgs;
+  const formatCountdown = (seconds: number) => {
+    const safeSeconds = Math.max(0, seconds);
+    const minutes = Math.floor(safeSeconds / 60);
+    const remaining = safeSeconds % 60;
+    return `${minutes}:${String(remaining).padStart(2, "0")}`;
   };
+
+  const paid = parseNumber(order.totalAmount);
+  const discountAmount = order.discountAmount;
 
   const isPaid = !!order.isPaid;
 
@@ -646,26 +988,6 @@ export default function DeliveredOrderDetails() {
         <Text style={[styles.orderId, { color: theme.text }]}>
           {order.order_id}
         </Text>
-        <View
-          style={[
-            styles.paymentPill,
-            { backgroundColor: isPaid ? "#DCFCE7" : "#FEF3C7" },
-          ]}
-        >
-          <Ionicons
-            name={isPaid ? "checkmark-circle" : "time-outline"}
-            size={13}
-            color={isPaid ? "#16A34A" : "#D97706"}
-          />
-          <Text
-            style={[
-              styles.paymentPillText,
-              { color: isPaid ? "#16A34A" : "#D97706" },
-            ]}
-          >
-            {isPaid ? "Paid" : "Due"}
-          </Text>
-        </View>
       </View>
 
       {/* DELIVERY DETAILS */}
@@ -673,31 +995,12 @@ export default function DeliveredOrderDetails() {
         <View style={[styles.heading, { backgroundColor: theme.card }]}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>Details</Text>
 
-          <TouchableOpacity
-            onPress={() => {
-              const imgs = gatherOrderImages();
-              if (imgs.length === 0) {
-                setGalleryIndex(0);
-                setGalleryVisible(true);
-                return;
-              }
-              setGalleryIndex(0);
-              setGalleryVisible(true);
-            }}
-            activeOpacity={0.8}
-          >
-            <Text
-              style={[
-                styles.cardTitle2,
-                {
-                  color: theme.primaryDark,
-                  backgroundColor: theme.primarySoft,
-                  borderColor: theme.primary,
-                },
-              ]}
-            >
-              Images
-            </Text>
+          <TouchableOpacity onPress={openMoreMenu} activeOpacity={0.8}>
+            <Ionicons
+              name="ellipsis-vertical"
+              size={18}
+              color={theme.primary}
+            />
           </TouchableOpacity>
         </View>
 
@@ -739,20 +1042,6 @@ export default function DeliveredOrderDetails() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.navigateBtn,
-            {
-              backgroundColor: theme.primary,
-              opacity: order?.orderLocation ? 1 : 0.5,
-            },
-          ]}
-          onPress={handleNavigate}
-          disabled={!order?.orderLocation}
-        >
-          <Ionicons name="navigate" size={18} color="#fff" />
-          <Text style={styles.navigateText}>Navigate</Text>
-        </TouchableOpacity>
       </View>
 
       {/* ITEMS */}
@@ -762,7 +1051,7 @@ export default function DeliveredOrderDetails() {
         {order.items.map((item, index) => (
           <ItemRow
             key={item.itemId?._id || index}
-            label={`${item.label} x ${item.quantity}`}
+            label={`${item.label}`}
             price={`₹${item.price}`}
             theme={theme}
           />
@@ -774,28 +1063,86 @@ export default function DeliveredOrderDetails() {
         <Text style={[styles.cardTitle, { color: theme.text }]}>
           Payment Summary
         </Text>
+        <View
+          style={[
+            styles.paymentBanner,
+            {
+              backgroundColor: isPaid ? "#F0FDF4" : "#FFFBEB",
+              borderLeftColor: isPaid ? "#22C55E" : "#F59E0B",
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.paymentIconWrap,
+              {
+                backgroundColor: isPaid ? "#DCFCE7" : "#FEF3C7",
+              },
+            ]}
+          >
+            <Ionicons
+              name={isPaid ? "checkmark-circle" : "cash"}
+              size={24}
+              color={isPaid ? "#16A34A" : "#D97706"}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text
+              style={[
+                styles.paymentBannerTitle,
+                {
+                  color: isPaid ? "#15803D" : "#B45309",
+                },
+              ]}
+            >
+              {isPaid ? "PREPAID ORDER" : "PAYMENT DUE"}
+            </Text>
+            <Text
+              style={[
+                styles.paymentBannerSubtitle,
+                {
+                  color: isPaid ? "#166534" : "#92400E",
+                },
+              ]}
+            >
+              {isPaid
+                ? "No Collection Required"
+                : `${fmtINR(paid)} to be collected`}
+            </Text>
+          </View>
+        </View>
 
         <SummaryRow label="Subtotal" price={fmtINR(subtotal)} theme={theme} />
-        <SummaryRow label="Discount" price={discountLabel} theme={theme} />
+        <SummaryRow label="Discount" price={"- " + fmtINR(discountAmount)} theme={theme} />
         <SummaryRow label="Total" price={fmtINR(paid)} bold theme={theme} />
       </View>
 
       {/* ACTION BUTTONS */}
       <View style={[styles.card, { backgroundColor: theme.card }]}>
         <Text style={[styles.cardTitle, { color: theme.text }]}>
-          Delivery Action's
+          Delivery Action
         </Text>
 
         <View style={styles.actionRow}>
           <TouchableOpacity
             style={[styles.actionBtn, styles.deliveredBtn]}
             activeOpacity={0.8}
-            onPress={onDeliveredPress}
-            disabled={delivering}
+            onPress={isPaid ? openDeliveredConfirmation : openPaymentOptions}
+            disabled={delivering || qrLoading}
           >
-            <Ionicons name="checkmark-circle-outline" size={20} color="#fff" />
+            <Ionicons
+              name={isPaid ? "checkmark-circle-outline" : "wallet-outline"}
+              size={20}
+              color="#fff"
+            />
             <Text style={styles.actionBtnText}>
-              {delivering ? "Processing..." : "Delivered"}
+              {delivering
+                ? "Processing..."
+                : isPaid
+                  ? "Mark as Delivered"
+                  : qrLoading
+                    ? "Preparing QR..."
+                    : "Collect Payment"}
             </Text>
           </TouchableOpacity>
 
@@ -805,7 +1152,7 @@ export default function DeliveredOrderDetails() {
             onPress={() => openReschedule(order)}
           >
             <Ionicons name="calendar-outline" size={20} color="#fff" />
-            <Text style={styles.actionBtnText}>Rescheduled</Text>
+            <Text style={styles.actionBtnText}>Reschedule</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -813,8 +1160,8 @@ export default function DeliveredOrderDetails() {
       {/* Modals */}
       <ImageGalleryModal
         visible={galleryVisible}
-        images={gatherOrderImages()}
-        initialIndex={galleryIndex}
+        beforeImages={beforeImages}
+        afterImages={afterImages}
         onClose={() => setGalleryVisible(false)}
       />
 
@@ -823,16 +1170,218 @@ export default function DeliveredOrderDetails() {
         onCancel={() => setShowCamera(false)}
         onImageCaptured={onImageCaptured}
         skipCapture={skipCapture}
+        allowSkip={actionMode !== "cash"}
+      />
+
+      <Modal
+        visible={paymentOptionVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPaymentOptionVisible(false)}
+      >
+        <View style={styles.paymentOptionBackdrop}>
+          <View style={styles.paymentOptionSheet}>
+            <Text style={styles.paymentOptionTitle}>Collect Payment</Text>
+            <Text style={styles.paymentOptionSubtitle}>
+              Choose how you want to collect payment for this order.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.paymentOptionButton,
+                { backgroundColor: "#16A34A" },
+              ]}
+              activeOpacity={0.85}
+              onPress={onCashPaymentPress}
+            >
+              <Ionicons name="cash-outline" size={20} color="#fff" />
+              <Text style={styles.paymentOptionButtonText}>Cash Payment</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.paymentOptionButton,
+                { backgroundColor: theme.primary },
+              ]}
+              activeOpacity={0.85}
+              onPress={generateQrPayment}
+              disabled={qrLoading}
+            >
+              <Ionicons name="qr-code-outline" size={20} color="#fff" />
+              <Text style={styles.paymentOptionButtonText}>
+                {qrLoading ? "Generating QR..." : "Generate QR"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.paymentOptionCancel}
+              activeOpacity={0.85}
+              onPress={() => setPaymentOptionVisible(false)}
+            >
+              <Text style={styles.paymentOptionCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={qrVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeQrPayment}
+      >
+        <View style={styles.qrBackdrop}>
+          <View style={styles.qrSheet}>
+            <Text style={styles.qrTitle}>Scan To Pay</Text>
+            <Text style={styles.qrSubtitle}>
+              Ask the customer to scan this QR for{" "}
+              {fmtINR(qrPayment?.amount || paid)}.
+            </Text>
+
+            {qrPayment?.qrImageUrl ? (
+              <Image
+                source={{ uri: qrPayment.qrImageUrl }}
+                style={styles.qrImage}
+              />
+            ) : null}
+
+            <View style={styles.qrTimerRow}>
+              <View
+                style={[
+                  styles.qrTimerDot,
+                  {
+                    backgroundColor:
+                      qrRemainingSeconds <= 0
+                        ? "#EF4444"
+                        : qrRemainingSeconds <= 60
+                          ? "#F59E0B"
+                          : "#22C55E",
+                  },
+                ]}
+              />
+              <Text style={styles.qrExpiryText}>
+                {qrRemainingSeconds > 0
+                  ? `Expires in ${formatCountdown(qrRemainingSeconds)}`
+                  : "QR Expired"}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.qrCloseButton,
+                qrCancelling && styles.qrCloseButtonDisabled,
+              ]}
+              activeOpacity={0.85}
+              onPress={closeQrPayment}
+              disabled={qrCancelling}
+            >
+              <Text style={styles.qrCloseButtonText}>
+                {qrCancelling ? "Closing..." : "Close"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showPaymentSuccessMedia}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPaymentSuccessMedia(false)}
+      >
+        <View style={styles.paymentSuccessBackdrop}>
+          <View style={styles.paymentSuccessSheet}>
+            <LottieView
+              source={require("../../../../assets/animations/payment-success.json")}
+              style={styles.paymentSuccessVideo}
+              autoPlay
+              loop
+            />
+          </View>
+        </View>
+      </Modal>
+
+      <FollowupPickupModal
+        visible={showFollowupPickupPrompt}
+        customerName={order.customerName}
+        loading={creatingFollowupPickup}
+        onCreatePickup={handleCreateFollowupPickup}
+        onSkip={handleSkipFollowupPickup}
       />
 
       <ConfirmModal
         visible={showConfirm}
-        title="Mark as Delivered?"
-        message="Are you sure you want to mark this delivery as delivered?"
-        confirmText="Yes, Delivered"
+        title={
+          actionMode === "cash"
+            ? "Collect Cash & Deliver?"
+            : "Mark as Delivered?"
+        }
+        message={
+          actionMode === "cash"
+            ? `Confirm cash collection of ${fmtINR(paid)} and mark this order as delivered?`
+            : "Are you sure you want to mark this delivery as delivered?"
+        }
+        confirmText={
+          actionMode === "cash" ? "Collect & Deliver" : "Yes, Delivered"
+        }
         cancelText="Cancel"
-        onConfirm={confirmDelivered}
+        onConfirm={
+          actionMode === "cash" ? confirmCashCollection : confirmPaidDelivery
+        }
         onCancel={() => setShowConfirm(false)}
+      />
+
+      <Modal
+        visible={moreVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMoreVisible(false)}
+      >
+        <View style={menuStyles.backdrop}>
+          <View style={[menuStyles.sheet, { backgroundColor: theme.card }]}>
+            <TouchableOpacity
+              onPress={() => setMoreVisible(false)}
+              style={menuStyles.closeIconBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons
+                name="close"
+                size={20}
+                color={theme.subText || "#6B7280"}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={menuStyles.menuItem} onPress={openImages}>
+              <Ionicons name="images-outline" size={18} color={theme.text} />
+              <Text style={[menuStyles.menuText, { color: theme.text }]}>
+                View Images
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={menuStyles.menuItem}
+              onPress={openReturnConfirm}
+            >
+              <Ionicons
+                name="return-down-back-outline"
+                size={18}
+                color="#EF4444"
+              />
+              <Text style={[menuStyles.menuText, { color: "#EF4444" }]}>
+                Mark as Return
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <ConfirmModal
+        visible={returnVisible}
+        title="Mark as Return?"
+        message="Are you sure you want to mark this order as returned?"
+        confirmText="Yes, Mark Return"
+        cancelText="Cancel"
+        onConfirm={markAsReturn}
+        onCancel={() => setReturnVisible(false)}
       />
 
       <RescheduleModalRN
@@ -854,147 +1403,66 @@ export default function DeliveredOrderDetails() {
 
 function ImageGalleryModal({
   visible,
-  images,
-  initialIndex = 0,
+  beforeImages,
+  afterImages,
   onClose,
 }: {
   visible: boolean;
-  images: string[];
-  initialIndex?: number;
+  beforeImages: string[];
+  afterImages: string[];
   onClose: () => void;
 }) {
-  const flatRef = useRef<FlatList<any> | null>(null);
-  const thumbsRef = useRef<FlatList<any> | null>(null);
-  const [index, setIndex] = useState(initialIndex);
-  const [loaded, setLoaded] = useState<boolean[]>([]);
+  const [activeTab, setActiveTab] = useState<"before" | "after">("before");
 
+  // Reset tab whenever modal opens
   useEffect(() => {
     if (visible) {
-      setIndex(initialIndex || 0);
-      setLoaded(images.map(() => false));
-      setTimeout(() => {
-        if (flatRef.current && typeof initialIndex === "number") {
-          try {
-            flatRef.current.scrollToIndex({
-              index: initialIndex,
-              animated: false,
-            });
-          } catch {
-            /* ignore if index out of range */
-          }
-        }
-      }, 40);
-    }
-  }, [visible, initialIndex, images]);
-
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems && viewableItems.length) {
-      const idx = viewableItems[0].index ?? 0;
-      setIndex(idx);
-      if (thumbsRef.current) {
-        try {
-          thumbsRef.current.scrollToIndex({
-            index: Math.max(0, idx - 1),
-            animated: true,
-          });
-        } catch {
-          /* ignore */
-        }
+      // If no before images but after images exist, open After tab by default
+      if ((beforeImages?.length || 0) === 0 && (afterImages?.length || 0) > 0) {
+        setActiveTab("after");
+      } else {
+        setActiveTab("before");
       }
     }
-  }).current;
+  }, [visible, beforeImages, afterImages]);
 
-  const viewabilityConfig = useRef({
-    viewAreaCoveragePercentThreshold: 50,
-  }).current;
+  const currentImages =
+    activeTab === "before" ? beforeImages || [] : afterImages || [];
 
-  const window = Dimensions.get("window");
-  const modalHeight = Math.round(window.height * 0.8);
-  const imageAreaHeight = modalHeight - 140;
+  const hasImages =
+    (beforeImages?.length || 0) > 0 || (afterImages?.length || 0) > 0;
 
-  const renderMainItem = ({
-    item,
-    index: i,
-  }: {
-    item: string;
-    index: number;
-  }) => (
-    <View
-      style={{
-        width: window.width,
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <View
+  const renderTab = (key: "before" | "after", label: string, count: number) => {
+    const isActive = activeTab === key;
+    const isDisabled = count === 0;
+
+    return (
+      <TouchableOpacity
+        key={key}
+        activeOpacity={0.8}
+        disabled={isDisabled}
+        onPress={() => setActiveTab(key)}
         style={{
-          width: window.width * 0.95,
-          height: imageAreaHeight,
+          flex: 1,
+          paddingVertical: 12,
           borderRadius: 12,
-          overflow: "hidden",
-          backgroundColor: "#000",
           alignItems: "center",
-          justifyContent: "center",
+          backgroundColor: isActive ? "#10B981" : "transparent",
+          opacity: isDisabled ? 0.4 : 1,
         }}
       >
-        {!loaded[i] && (
-          <View style={{ position: "absolute", zIndex: 2 }}>
-            <Text style={{ color: "#fff", fontWeight: "700" }}>Loading…</Text>
-          </View>
-        )}
-
-        <Image
-          source={{ uri: item }}
+        <Text
           style={{
-            width: "100%",
-            height: "100%",
-            resizeMode: "contain",
-            backgroundColor: "#000",
+            color: isActive ? "#FFFFFF" : "#9CA3AF",
+            fontWeight: "900",
+            fontSize: 14,
           }}
-          onLoadEnd={() => {
-            setLoaded((prev) => {
-              const copy = prev.slice();
-              copy[i] = true;
-              return copy;
-            });
-          }}
-        />
-      </View>
-    </View>
-  );
-
-  const renderThumb = ({ item, index: i }: { item: string; index: number }) => (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={() => {
-        setIndex(i);
-        if (flatRef.current) {
-          try {
-            flatRef.current.scrollToIndex({ index: i, animated: true });
-          } catch {
-            /* ignore */
-          }
-        }
-      }}
-      style={{
-        marginHorizontal: 6,
-        borderRadius: 8,
-        overflow: "hidden",
-        borderWidth: i === index ? 2 : 0,
-        borderColor: i === index ? "#ffffff" : "transparent",
-      }}
-    >
-      <Image
-        source={{ uri: item }}
-        style={{
-          width: 64,
-          height: 64,
-          resizeMode: "cover",
-          backgroundColor: "#111",
-        }}
-      />
-    </TouchableOpacity>
-  );
+        >
+          {label} ({count})
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <Modal
@@ -1004,74 +1472,87 @@ function ImageGalleryModal({
       onRequestClose={onClose}
     >
       <View style={modalStyles.backdrop}>
-        <View style={[modalStyles.gallerySheet, { height: modalHeight }]}>
+        <View
+          style={[
+            modalStyles.gallerySheet,
+            {
+              height: Dimensions.get("window").height * 0.85,
+            },
+          ]}
+        >
+          {/* Header */}
           <View style={modalStyles.galleryHeader}>
-            <Text style={modalStyles.title}>Images</Text>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text
-                style={{ color: "#6B7280", marginRight: 12, fontWeight: "700" }}
-              >
-                {images && images.length
-                  ? `${index + 1} / ${images.length}`
-                  : "0 / 0"}
-              </Text>
+            <Text style={[modalStyles.title, { color: "#FFFFFF" }]}>
+              Order Images
+            </Text>
 
-              <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
-                <Ionicons name="close" size={22} color="#374151" />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={onClose} style={{ padding: 8 }}>
+              <Ionicons name="close" size={22} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
 
-          {images && images.length > 0 ? (
+          {hasImages ? (
             <>
-              <FlatList
-                ref={flatRef}
-                data={images}
-                keyExtractor={(_, i) => String(i)}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                renderItem={renderMainItem}
-                onViewableItemsChanged={onViewableItemsChanged}
-                viewabilityConfig={viewabilityConfig}
-                initialNumToRender={1}
-                windowSize={2}
-                maxToRenderPerBatch={1}
-              />
-
+              {/* Tabs */}
               <View
                 style={{
                   flexDirection: "row",
-                  justifyContent: "center",
-                  marginTop: 8,
+                  backgroundColor: "#1F2937",
+                  borderRadius: 14,
+                  padding: 4,
+                  marginBottom: 20,
                 }}
               >
-                {images.map((img, i) => (
-                  <View
-                    key={img}
-                    style={[
-                      modalStyles.dot,
-                      i === index ? modalStyles.dotActive : undefined,
-                    ]}
-                  />
-                ))}
+                {renderTab("before", "Before", beforeImages?.length || 0)}
+                {renderTab("after", "After", afterImages?.length || 0)}
               </View>
 
-              <View style={{ marginTop: 12 }}>
+              {/* Images */}
+              {currentImages.length > 0 ? (
                 <FlatList
-                  ref={thumbsRef}
-                  data={images}
-                  keyExtractor={(item) => item}
+                  data={currentImages}
+                  keyExtractor={(item, index) => `${activeTab}-${index}`}
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  renderItem={renderThumb}
-                  contentContainerStyle={{ paddingHorizontal: 12 }}
+                  contentContainerStyle={{
+                    paddingBottom: 24,
+                  }}
+                  renderItem={({ item }) => (
+                    <View style={{ marginRight: 12 }}>
+                      <Image
+                        source={{ uri: item }}
+                        style={{
+                          width: 260,
+                          height: 360,
+                          borderRadius: 14,
+                          backgroundColor: "#111827",
+                        }}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  )}
                 />
-              </View>
+              ) : (
+                <View
+                  style={{
+                    flex: 1,
+                    justifyContent: "center",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={{ color: "#9CA3AF" }}>No images available</Text>
+                </View>
+              )}
             </>
           ) : (
-            <View style={{ padding: 24, alignItems: "center" }}>
-              <Text style={{ color: "#6B7280" }}>No images available</Text>
+            <View
+              style={{
+                flex: 1,
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Text style={{ color: "#9CA3AF" }}>No images available</Text>
             </View>
           )}
         </View>
@@ -1277,7 +1758,8 @@ function DetailRow({ icon, label, value, theme, onPress, isLink }: any) {
             styles.detailValue,
             { color: isLink ? theme.primary : theme.text },
           ]}
-          numberOfLines={0}
+          numberOfLines={1}
+          ellipsizeMode="tail"
         >
           {value}
         </Text>
@@ -1345,16 +1827,198 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: { fontWeight: "900", fontSize: 16 },
-  paymentPill: {
+
+  paymentBanner: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    margin: 8,
+    padding: 14,
+    borderRadius: 14,
+    borderLeftWidth: 5,
+    marginBottom: 16,
   },
-  paymentPillText: { fontSize: 10, fontWeight: "600" },
+
+  paymentIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+
+  paymentBannerTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+
+  paymentOptionBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.5)",
+    justifyContent: "flex-end",
+  },
+
+  paymentOptionSheet: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 28,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    gap: 12,
+  },
+
+  paymentOptionTitle: {
+    fontSize: 21,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+
+  paymentOptionSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#475569",
+    marginBottom: 4,
+  },
+
+  paymentOptionButton: {
+    minHeight: 52,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+  },
+
+  paymentOptionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  paymentOptionCancel: {
+    minHeight: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#E2E8F0",
+  },
+
+  paymentOptionCancelText: {
+    color: "#0F172A",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  qrBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+
+  qrSheet: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 28,
+    alignItems: "center",
+  },
+
+  qrTitle: {
+    fontSize: 21,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+
+  qrSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#475569",
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 20,
+  },
+
+  qrImage: {
+    width: 300,
+    height: 320,
+    marginBottom: 18,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    borderRadius: 18,
+  },
+
+  qrTimerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  qrTimerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+
+  qrExpiryText: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  qrCloseButton: {
+    marginTop: 18,
+    minWidth: 120,
+    minHeight: 46,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#0F172A",
+  },
+
+  qrCloseButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  qrCloseButtonDisabled: {
+    opacity: 0.7,
+  },
+
+  paymentSuccessBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 23, 0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+
+  paymentSuccessSheet: {
+    width: "100%",
+    maxWidth: 320,
+    borderRadius: 22,
+    overflow: "hidden",
+    backgroundColor: "#052E16",
+    borderWidth: 1,
+    borderColor: "#BBF7D0",
+    elevation: 10,
+  },
+
+  paymentSuccessVideo: {
+    width: "100%",
+    height: 220,
+    backgroundColor: "#052E16",
+  },
+  paymentBannerSubtitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
+  },
 
   avatar: {
     width: 32,
@@ -1383,7 +2047,7 @@ const styles = StyleSheet.create({
 
   card: {
     marginHorizontal: 16,
-    marginBottom: 16,
+    marginBottom: 20,
     padding: 16,
     borderRadius: 18,
   },
@@ -1477,6 +2141,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#F59E0B", // amber
   },
 
+  returnBtn: {
+    backgroundColor: "#EF4444",
+  },
+
   navigateBtn: {
     marginTop: 14,
     height: 40,
@@ -1518,6 +2186,59 @@ const styles = StyleSheet.create({
   },
 });
 
+const menuStyles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "#00000055",
+    justifyContent: "flex-start",
+    paddingTop: 110,
+    paddingRight: 16,
+    alignItems: "flex-end",
+  },
+
+  sheet: {
+    width: 160,
+    borderRadius: 14,
+    padding: 12,
+    paddingTop: 12,
+    elevation: 6,
+  },
+
+  closeIconBtn: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    padding: 4,
+  },
+
+  menuItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+  },
+
+  menuText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  closeBtn: {
+    marginTop: 6,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#E5E7EB",
+  },
+
+  closeText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#6B7280",
+  },
+});
+
 const modalStyles = StyleSheet.create({
   backdrop: {
     flex: 1,
@@ -1536,7 +2257,7 @@ const modalStyles = StyleSheet.create({
     marginBottom: 6,
   },
   sub: {
-    fontSize: 13,
+    fontSize: 14,
     color: "#374151",
     marginBottom: 12,
   },
@@ -1627,6 +2348,13 @@ const modalStyles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
   },
+  closeIconBtn: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    padding: 4,
+  },
   dot: {
     width: 8,
     height: 8,
@@ -1638,3 +2366,4 @@ const modalStyles = StyleSheet.create({
     backgroundColor: "#ffffff",
   },
 });
+

@@ -1,10 +1,10 @@
 // services/socket.ts
 import { io } from "socket.io-client";
 
-const SOCKET_URL = "https://api.drydash.in";
+const SOCKET_URL = "https://api.shiptos.com";
 
 export const socket = io(SOCKET_URL, {
-  transports: ["websocket"], // 🔥 force websocket (important)
+  transports: ["websocket"],
   autoConnect: false,
   reconnection: true,
   reconnectionAttempts: Infinity,
@@ -13,8 +13,10 @@ export const socket = io(SOCKET_URL, {
   timeout: 20000,
 });
 
+socket.onAnyOutgoing((event, ...args) => {
+});
+
 socket.onAny((event, ...args) => {
-  console.log("📩 [CLIENT onAny]", event, JSON.stringify(args));
 });
 
 socket.on("connect", () => {

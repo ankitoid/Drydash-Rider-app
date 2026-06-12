@@ -2,21 +2,21 @@ import { useAuth } from "@/context/useAuth";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
-const API_URL = "https://api.drydash.in/api/v1/auth";
+const API_URL = "https://api.shiptos.com/api/v1/auth";
 
 export default function RiderOTP() {
   const { phone } = useLocalSearchParams<{ phone?: string }>();
@@ -147,7 +147,7 @@ export default function RiderOTP() {
           role: data.data.user.role,
           plant: data.data.user.plant,
         },
-        data.tokens.accessToken
+        data.tokens.accessToken,
       );
 
       router.replace("/(rider)/(tabs)/dashboard");
@@ -161,24 +161,24 @@ export default function RiderOTP() {
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a0f0d" />
-      
-      <KeyboardAvoidingView 
+
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.keyboardView}
       >
-        <ScrollView 
+        <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
           {/* Back Button */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backButton}
             onPress={() => router.back()}
             activeOpacity={0.7}
@@ -203,7 +203,7 @@ export default function RiderOTP() {
                 </View>
               </View>
             </View> */}
-            
+
             <Text style={styles.pageTitle}>Verify OTP</Text>
           </Animated.View>
 
@@ -225,7 +225,7 @@ export default function RiderOTP() {
                   <Text style={styles.phoneNumber}>+91 {phone}</Text>
                 </View>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.editButton}
                 onPress={() => router.back()}
                 activeOpacity={0.8}
@@ -292,16 +292,16 @@ export default function RiderOTP() {
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <View
                   key={index}
-                  style={[
-                    styles.dot,
-                    otp.length > index && styles.dotFilled,
-                  ]}
+                  style={[styles.dot, otp.length > index && styles.dotFilled]}
                 />
               ))}
             </View>
 
             <TouchableOpacity
-              style={[styles.verifyButton, loading && styles.verifyButtonLoading]}
+              style={[
+                styles.verifyButton,
+                loading && styles.verifyButtonLoading,
+              ]}
               onPress={handleVerifyOtp}
               disabled={loading}
               activeOpacity={0.9}
@@ -311,7 +311,9 @@ export default function RiderOTP() {
                   <ActivityIndicator color="#0a0f0d" size="small" />
                 ) : (
                   <>
-                    <Text style={styles.verifyButtonText}>Verify & Continue</Text>
+                    <Text style={styles.verifyButtonText}>
+                      Verify & Continue
+                    </Text>
                     <View style={styles.buttonArrowCircle}>
                       <Text style={styles.buttonArrow}>→</Text>
                     </View>
@@ -331,7 +333,9 @@ export default function RiderOTP() {
               },
             ]}
           >
-            <Text style={styles.resendQuestion}>Didn't receive the code?</Text>
+            <Text style={styles.resendQuestion}>
+              {"Didn't receive the code?"}
+            </Text>
             <TouchableOpacity
               onPress={handleGetOtp}
               disabled={timer > 0 || resendLoading}
@@ -347,8 +351,8 @@ export default function RiderOTP() {
                 {resendLoading
                   ? "Sending OTP..."
                   : timer > 0
-                  ? `Resend in ${timer}s`
-                  : "Resend OTP"}
+                    ? `Resend in ${timer}s`
+                    : "Resend OTP"}
               </Text>
             </TouchableOpacity>
           </Animated.View>
@@ -371,7 +375,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 32,
     // justifyContent: "center",
-    
   },
   backButton: {
     width: 44,
@@ -382,7 +385,6 @@ const styles = StyleSheet.create({
     borderColor: "rgba(16, 185, 129, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-
   },
   backIcon: {
     fontSize: 22,

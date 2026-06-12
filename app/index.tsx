@@ -3,17 +3,11 @@ import { useAuth } from "@/context/useAuth";
 import { router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef } from "react";
-import {
-  Animated,
-  StyleSheet,
-  Text,
-  View,
-  Image,
-} from "react-native";
+import { Animated, Image, StyleSheet, Text, View } from "react-native";
 
 export default function Splash() {
   const { theme, isDark } = useTheme();
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
   const scale = useRef(new Animated.Value(0.85)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -41,9 +35,6 @@ export default function Splash() {
     ]).start();
   }, []);
 
-console.log("this is the user on top:: ", user)
-
-
   useEffect(() => {
     if (isLoading) return;
     if (hasNavigatedRef.current) return;
@@ -60,8 +51,7 @@ console.log("this is the user on top:: ", user)
       }
     };
 
-    const timer = setTimeout(navigate, 800);
-    return () => clearTimeout(timer);
+    navigate();
   }, [isLoading, isAuthenticated]);
 
   return (

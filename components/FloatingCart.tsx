@@ -1,9 +1,13 @@
+import { useCart, type CartItem } from "@/context/CartContext";
+import { useTheme } from "@/context/ThemeContext";
+import { usePathname } from "expo-router";
 import { Pressable, StyleSheet, Text } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
 } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function FloatingCart({ onOpen }: { onOpen: () => void }) {
   const { items } = useCart();
@@ -13,17 +17,20 @@ export default function FloatingCart({ onOpen }: { onOpen: () => void }) {
 
   const scale = useSharedValue(1);
 
-  const totalQty = items.reduce((s, i) => s + i.qty, 0);
-  const totalPrice = items.reduce((s, i) => s + i.qty * i.price, 0);
+  const totalQty = items.reduce((s: number, i: CartItem) => s + i.qty, 0);
+  const totalPrice = items.reduce(
+    (s: number, i: CartItem) => s + i.qty * i.price,
+    0,
+  );
 
   const hideOnRoutes = ["/order/pickup/select-items"];
   const shouldHide = hideOnRoutes.some((route) => pathname?.includes(route));
 
-  if (totalQty === 0 || shouldHide) return null;
-
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
+
+  if (totalQty === 0 || shouldHide) return null;
 
   return (
     <Pressable

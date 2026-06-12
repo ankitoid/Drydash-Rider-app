@@ -1,26 +1,29 @@
 // app/(rider)/(tabs)/dashboard/index.tsx
 import { useLocation } from "@/context/LocationContext";
 import { useAuth } from "@/context/useAuth";
+import { trackingLegService } from "@/services/trackingLegService";
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import moment from "moment";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    Dimensions,
-    FlatList,
-    Image,
-    Modal,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  FlatList,
+  Image,
+  InteractionManager,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { Skeleton } from "../../../../components/ui/Skeleton";
 import { useTheme } from "../../../../context/ThemeContext";
@@ -30,8 +33,8 @@ const { width, height } = Dimensions.get("window");
 const CARD_WIDTH = width - 48;
 const H_CARD = Math.min(320, width * 0.85);
 
-const PICKUP_API_BASE = "https://api.drydash.in/api/v1/rider";
-const ORDERS_API_BASE = "https://api.drydash.in/api/v1";
+const PICKUP_API_BASE = "https://api.shiptos.com/api/v1/rider";
+const ORDERS_API_BASE = "https://api.shiptos.com/api/v1";
 
 type Order = {
   id: string;
@@ -53,13 +56,19 @@ type Order = {
 export default function Dashboard() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const { isTracking, lastLocation, toggleTracking, error: locationError } = useLocation();
+  const {
+    lastLocation,
+    error: locationError,
+  } = useLocation();
 
   const [tripId, setTripId] = useState<string | null>(null);
   const [startKm, setStartKm] = useState("");
   const [endKm, setEndKm] = useState("");
-  const [startImage, setStartImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
-  const [endImage, setEndImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [startImage, setStartImage] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [endImage, setEndImage] = useState<ImagePicker.ImagePickerAsset | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -74,13 +83,11 @@ export default function Dashboard() {
   const [isEndingTrip, setIsEndingTrip] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
 
-  const restoreOpenTrip = async () => {
+  const restoreOpenTrip = useCallback(async () => {
     try {
       if (!user?._id) return;
 
-      const res = await fetch(
-        `${ORDERS_API_BASE}/trips/active/${user._id}`
-      );
+      const res = await fetch(`${ORDERS_API_BASE}/trips/active/${user._id}`);
       if (!res.ok) {
         console.warn("restoreOpenTrip: failed", res.status);
         return;
@@ -106,7 +113,7 @@ export default function Dashboard() {
     } catch (err) {
       console.warn("Error restoring open trip:", err);
     }
-  };
+  }, [user?._id]);
 
   const fetchKilometersData = useCallback(async () => {
     try {
@@ -114,16 +121,34 @@ export default function Dashboard() {
 
       const today = getLocalYYYYMMDD();
       const dailyRes = await fetch(
-        `${ORDERS_API_BASE}/trips/daily/${user._id}?date=${today}`
+        `${ORDERS_API_BASE}/trips/daily/${user._id}?date=${today}`,
       );
 
+      const taskDistanceKm = await trackingLegService.getTodayDistanceKm();
+      let serverTaskDistanceKm = 0;
+      const taskTrackingRes = await fetch(
+        `${ORDERS_API_BASE}/location/tracking/rider/${user._id}/daily?date=${today}`,
+      );
+      if (taskTrackingRes.ok) {
+        const taskTrackingJson = await taskTrackingRes.json();
+        serverTaskDistanceKm =
+          taskTrackingJson?.summary?.totalDistanceKm || 0;
+      }
+      let serverDailyKm = 0;
       if (dailyRes.ok) {
         const dailyJson = await dailyRes.json();
-        setDailyKm(dailyJson.totalDailyDistance || 0);
+        serverDailyKm = dailyJson.totalDailyDistance || 0;
       }
+      setDailyKm(
+        Number(
+          (
+            serverDailyKm + Math.max(taskDistanceKm, serverTaskDistanceKm)
+          ).toFixed(2),
+        ),
+      );
 
       const totalRes = await fetch(
-        `${ORDERS_API_BASE}/trips/custom-summary/${user._id}`
+        `${ORDERS_API_BASE}/trips/custom-summary/${user._id}`,
       );
 
       if (totalRes.ok) {
@@ -139,25 +164,28 @@ export default function Dashboard() {
     return moment().format("YYYY-MM-DD");
   };
 
-  const fetchRiderTasks = useCallback(async (date?: string) => {
-    try {
-      if (!user?._id) return;
-      const d = date || getLocalYYYYMMDD();
-      const url = `${PICKUP_API_BASE}/rider-tasks/${user._id}?date=${encodeURIComponent(d)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.warn("fetchRiderTasks failed:", res.status);
-        return;
-      }
-      const json = await res.json();
-      const summary = json.summary || {};
+  const fetchRiderTasks = useCallback(
+    async (date?: string) => {
+      try {
+        if (!user?._id) return;
+        const d = date || getLocalYYYYMMDD();
+        const url = `${PICKUP_API_BASE}/rider-tasks/${user._id}?date=${encodeURIComponent(d)}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          console.warn("fetchRiderTasks failed:", res.status);
+          return;
+        }
+        const json = await res.json();
+        const summary = json.summary || {};
 
-      setFulfilledCount(Number(summary.totalCompletedPickups ?? 0));
-      setDeliveredCount(Number(summary.totalCompletedDeliveries ?? 0));
-    } catch (err) {
-      console.warn("Error fetching rider tasks:", err);
-    }
-  }, [user?._id]);
+        setFulfilledCount(Number(summary.totalCompletedPickups ?? 0));
+        setDeliveredCount(Number(summary.totalCompletedDeliveries ?? 0));
+      } catch (err) {
+        console.warn("Error fetching rider tasks:", err);
+      }
+    },
+    [user?._id],
+  );
 
   const kpi = useFadeSlide(0, 20);
 
@@ -170,16 +198,15 @@ export default function Dashboard() {
       // Compress image with expo-image-manipulator
       const manipResult = await manipulateAsync(
         image.uri,
-        [
-          { resize: { width: 900 } }
-        ],
+        [{ resize: { width: 900 } }],
         {
           compress: 0.5,
-          format: SaveFormat.JPEG // Convert to JPEG
-        }
+          format: SaveFormat.JPEG, // Convert to JPEG
+        },
       );
 
-      const compressedSize = (manipResult.width) * (manipResult.height || 600) * 0.5;
+      const compressedSize =
+        manipResult.width * (manipResult.height || 600) * 0.5;
       const savedPercentage = originalSize
         ? Math.round(((originalSize - compressedSize) / originalSize) * 100)
         : 0;
@@ -207,7 +234,7 @@ export default function Dashboard() {
     if (status !== "granted") {
       Alert.alert(
         "Permission Required",
-        "Camera access is required to capture odometer photos"
+        "Camera access is required to capture odometer photos",
       );
       return;
     }
@@ -232,7 +259,10 @@ export default function Dashboard() {
 
   const handleStartTrip = async () => {
     if (!startKm || !startImage || !user?._id) {
-      Alert.alert("Missing Information", "Please enter start KM and capture odometer photo");
+      Alert.alert(
+        "Missing Information",
+        "Please enter start KM and capture odometer photo",
+      );
       return;
     }
 
@@ -272,7 +302,10 @@ export default function Dashboard() {
 
   const handleEndTrip = async () => {
     if (!endKm || !endImage || !tripId) {
-      Alert.alert("Missing Information", "Please enter end KM and capture odometer photo");
+      Alert.alert(
+        "Missing Information",
+        "Please enter end KM and capture odometer photo",
+      );
       return;
     }
 
@@ -287,20 +320,17 @@ export default function Dashboard() {
     } as any);
 
     try {
-      const res = await fetch(
-        `${ORDERS_API_BASE}/trips/${tripId}/end`,
-        {
-          method: "PUT",
-          body: form,
-        }
-      );
+      const res = await fetch(`${ORDERS_API_BASE}/trips/${tripId}/end`, {
+        method: "PUT",
+        body: form,
+      });
 
       const json = await res.json();
 
       if (res.ok) {
         Alert.alert(
           "Trip Completed",
-          `Distance covered: ${json.trip.distance} km\n\nGreat work!`
+          `Distance covered: ${json.trip.distance} km\n\nGreat work!`,
         );
         setTripId(null);
         setStartKm("");
@@ -320,44 +350,14 @@ export default function Dashboard() {
   };
 
   const confirmToggle = () => {
-    if (isTracking) {
-      Alert.alert(
-        "Stop Live Tracking?",
-        "Your real-time location will no longer be shared with admin.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Stop",
-            style: "destructive",
-            onPress: () => {
-              try {
-                toggleTracking();
-              } catch (e) {
-                console.warn("Error stopping tracking", e);
-              }
-            },
-          },
-        ]
-      );
-    } else {
-      Alert.alert(
-        "Start Live Tracking?",
-        "Enable live tracking to share your real-time location with admin.",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Start",
-            onPress: () => {
-              try {
-                toggleTracking();
-              } catch (e) {
-                console.warn("Error starting tracking", e);
-              }
-            },
-          },
-        ]
-      );
-    }
+    Alert.alert(
+      "Task Navigation",
+      "KM tracking starts from the Start Navigation button inside each pickup or delivery task.",
+    );
+  };
+
+  const openReturnToPlant = () => {
+    router.push("/(rider)/order/return-to-plant" as any);
   };
 
   const renderLocationStatus = () => (
@@ -366,27 +366,31 @@ export default function Dashboard() {
         style={[
           styles.locationStatusBadge,
           {
-            backgroundColor: isTracking ? '#10b981' : '#ef4444',
+            backgroundColor: "#10B981",
             borderColor: theme.border,
-          }
+          },
         ]}
         onPress={confirmToggle}
         activeOpacity={0.8}
       >
         <View style={styles.statusIndicator}>
-          <View style={[
-            styles.statusDot,
-            { backgroundColor: isTracking ? '#10b981' : '#ef4444' }
-          ]} />
+          <View
+            style={[
+              styles.statusDot,
+              { backgroundColor: "#10B981" },
+            ]}
+          />
         </View>
-        <Text style={styles.statusText}>
-          {isTracking ? 'LIVE TRACKING' : 'OFFLINE'}
-        </Text>
+        <Text style={styles.statusText}>TASK NAVIGATION</Text>
       </TouchableOpacity>
 
       {lastLocation && (
         <Text style={[styles.lastUpdateText, { color: theme.subText }]}>
-          Last update: {new Date(lastLocation.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          Last update:{" "}
+          {new Date(lastLocation.timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}
         </Text>
       )}
 
@@ -404,7 +408,9 @@ export default function Dashboard() {
       onRequestClose={() => setShowTripModal(false)}
     >
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
+        <View
+          style={[styles.modalContent, { backgroundColor: theme.background }]}
+        >
           {/* Header */}
           <View style={styles.modalHeader}>
             <View>
@@ -412,7 +418,9 @@ export default function Dashboard() {
                 {tripId ? "End Trip" : "Start Trip"}
               </Text>
               <Text style={[styles.modalSubtitle, { color: theme.subText }]}>
-                {tripId ? "Record your final odometer reading" : "Record your starting odometer reading"}
+                {tripId
+                  ? "Record your final odometer reading"
+                  : "Record your starting odometer reading"}
               </Text>
             </View>
             <TouchableOpacity
@@ -429,8 +437,18 @@ export default function Dashboard() {
               <Text style={[styles.inputLabel, { color: theme.text }]}>
                 Odometer Reading (KM)
               </Text>
-              <View style={[styles.inputWrapper, { borderColor: theme.border, backgroundColor: theme.card }]}>
-                <Ionicons name="speedometer-outline" size={20} color={theme.primary} style={styles.inputIcon} />
+              <View
+                style={[
+                  styles.inputWrapper,
+                  { borderColor: theme.border, backgroundColor: theme.card },
+                ]}
+              >
+                <Ionicons
+                  name="speedometer-outline"
+                  size={20}
+                  color={theme.primary}
+                  style={styles.inputIcon}
+                />
                 <TextInput
                   placeholder={tripId ? "Enter ending KM" : "Enter starting KM"}
                   placeholderTextColor={theme.subText}
@@ -451,7 +469,9 @@ export default function Dashboard() {
                 {isCompressing && (
                   <View style={styles.compressingBadge}>
                     <ActivityIndicator size="small" color={theme.primary} />
-                    <Text style={[styles.compressingText, { color: theme.primary }]}>
+                    <Text
+                      style={[styles.compressingText, { color: theme.primary }]}
+                    >
                       Compressing...
                     </Text>
                   </View>
@@ -466,13 +486,19 @@ export default function Dashboard() {
                   />
                   <View style={styles.imageInfoOverlay}>
                     <View style={styles.compressionBadge}>
-                      <Ionicons name="checkmark-circle" size={14} color="#10b981" />
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={14}
+                        color="#10b981"
+                      />
                       <Text style={styles.compressionText}>Compressed</Text>
                     </View>
                   </View>
                   <TouchableOpacity
                     style={styles.retakeButton}
-                    onPress={() => clickPhoto(tripId ? setEndImage : setStartImage)}
+                    onPress={() =>
+                      clickPhoto(tripId ? setEndImage : setStartImage)
+                    }
                   >
                     <Ionicons name="camera" size={16} color="#fff" />
                     <Text style={styles.retakeText}>Retake Photo</Text>
@@ -480,17 +506,32 @@ export default function Dashboard() {
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={[styles.photoButton, { borderColor: theme.border, backgroundColor: theme.card }]}
-                  onPress={() => clickPhoto(tripId ? setEndImage : setStartImage)}
+                  style={[
+                    styles.photoButton,
+                    { borderColor: theme.border, backgroundColor: theme.card },
+                  ]}
+                  onPress={() =>
+                    clickPhoto(tripId ? setEndImage : setStartImage)
+                  }
                   disabled={isCompressing}
                 >
-                  <View style={[styles.cameraIconWrapper, { backgroundColor: theme.primary + '20' }]}>
+                  <View
+                    style={[
+                      styles.cameraIconWrapper,
+                      { backgroundColor: theme.primary + "20" },
+                    ]}
+                  >
                     <Ionicons name="camera" size={32} color={theme.primary} />
                   </View>
                   <Text style={[styles.photoButtonText, { color: theme.text }]}>
                     Capture Odometer
                   </Text>
-                  <Text style={[styles.photoButtonSubtext, { color: theme.subText }]}>
+                  <Text
+                    style={[
+                      styles.photoButtonSubtext,
+                      { color: theme.subText },
+                    ]}
+                  >
                     Take a clear photo of your odometer reading
                   </Text>
                 </TouchableOpacity>
@@ -511,12 +552,12 @@ export default function Dashboard() {
               <TouchableOpacity
                 style={[
                   styles.submitButton,
-                  { backgroundColor: tripId ? '#ef4444' : theme.primary }
+                  { backgroundColor: tripId ? "#ef4444" : theme.primary },
                 ]}
                 onPress={tripId ? handleEndTrip : handleStartTrip}
                 disabled={isStartingTrip || isEndingTrip || isCompressing}
               >
-                {(isStartingTrip || isEndingTrip) ? (
+                {isStartingTrip || isEndingTrip ? (
                   <>
                     <ActivityIndicator size="small" color="#fff" />
                     <Text style={styles.submitButtonText}>Processing...</Text>
@@ -543,24 +584,35 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!user?.email) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
     const fetchData = async () => {
+      if (cancelled) return;
       await Promise.all([
         restoreOpenTrip(),
         fetchRiderTasks(),
-        fetchKilometersData()
+        fetchKilometersData(),
       ]);
     };
 
-    fetchData();
-  }, [user?.email, fetchRiderTasks]);
+    const task = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(fetchData, 250);
+    });
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      task.cancel();
+    };
+  }, [user?.email, fetchRiderTasks, fetchKilometersData, restoreOpenTrip]);
 
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([
       restoreOpenTrip(),
       fetchRiderTasks(),
-      fetchKilometersData()
+      fetchKilometersData(),
     ]);
     setRefreshing(false);
   };
@@ -576,7 +628,11 @@ export default function Dashboard() {
         contentContainerStyle={{ paddingTop: 18, paddingBottom: 120 }}
       >
         <View style={styles.topRow}>
-          <Skeleton height={64} radius={12} style={{ width: CARD_WIDTH * 0.62 }} />
+          <Skeleton
+            height={64}
+            radius={12}
+            style={{ width: CARD_WIDTH * 0.62 }}
+          />
           <Skeleton height={40} radius={12} style={{ width: 80 }} />
         </View>
         <View style={{ paddingHorizontal: 16 }}>
@@ -616,8 +672,16 @@ export default function Dashboard() {
                 },
               ]}
             >
-              <KpiCard title="FULFILLED" value={String(fulfilledCount)} theme={theme} />
-              <KpiCard title="DELIVERED" value={String(deliveredCount)} theme={theme} />
+              <KpiCard
+                title="FULFILLED"
+                value={String(fulfilledCount)}
+                theme={theme}
+              />
+              <KpiCard
+                title="DELIVERED"
+                value={String(deliveredCount)}
+                theme={theme}
+              />
             </Animated.View>
 
             <Animated.View
@@ -633,23 +697,68 @@ export default function Dashboard() {
               <KpiCard title="TOTAL KM" value={`${totalKm} km`} theme={theme} />
             </Animated.View>
 
+            <View style={styles.returnPlantContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.returnPlantButton,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                ]}
+                onPress={openReturnToPlant}
+                activeOpacity={0.86}
+              >
+                <View
+                  style={[
+                    styles.returnPlantIcon,
+                    { backgroundColor: theme.primary + "18" },
+                  ]}
+                >
+                  <Ionicons name="business-outline" size={22} color={theme.primary} />
+                </View>
+                <View style={styles.returnPlantTextWrap}>
+                  <Text style={[styles.returnPlantTitle, { color: theme.text }]}>
+                    Return to Plant
+                  </Text>
+                  <Text style={[styles.returnPlantSub, { color: theme.subText }]}>
+                    Count KM only if you navigate back
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={theme.subText} />
+              </TouchableOpacity>
+            </View>
+
             {/* Trip Tracker Card */}
             <View style={styles.tripTrackerContainer}>
               <View
                 style={[
                   styles.tripTrackerCard,
-                  { backgroundColor: theme.card, borderColor: theme.border }
+                  { backgroundColor: theme.card, borderColor: theme.border },
                 ]}
               >
                 <View style={styles.tripTrackerHeader}>
-                  <View style={[styles.tripIconWrapper, { backgroundColor: theme.primary + '15' }]}>
-                    <Ionicons name="speedometer" size={24} color={theme.primary} />
+                  <View
+                    style={[
+                      styles.tripIconWrapper,
+                      { backgroundColor: theme.primary + "15" },
+                    ]}
+                  >
+                    <Ionicons
+                      name="speedometer"
+                      size={24}
+                      color={theme.primary}
+                    />
                   </View>
                   <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={[styles.tripTrackerTitle, { color: theme.text }]}>
+                    <Text
+                      style={[styles.tripTrackerTitle, { color: theme.text }]}
+                    >
                       Daily Trip Tracker
                     </Text>
-                    <Text style={[styles.tripTrackerSubtitle, { color: theme.subText }]}>
+                    <Text
+                      style={[
+                        styles.tripTrackerSubtitle,
+                        { color: theme.subText },
+                      ]}
+                    >
                       {tripId ? "Trip in progress" : "Ready to start tracking"}
                     </Text>
                   </View>
@@ -662,13 +771,26 @@ export default function Dashboard() {
                 </View>
 
                 {tripId && (
-                  <View style={[styles.tripInfoBox, { backgroundColor: theme.background }]}>
+                  <View
+                    style={[
+                      styles.tripInfoBox,
+                      { backgroundColor: theme.background },
+                    ]}
+                  >
                     <View style={styles.tripInfoItem}>
-                      <Ionicons name="play-circle" size={16} color={theme.primary} />
-                      <Text style={[styles.tripInfoLabel, { color: theme.subText }]}>
+                      <Ionicons
+                        name="play-circle"
+                        size={16}
+                        color={theme.primary}
+                      />
+                      <Text
+                        style={[styles.tripInfoLabel, { color: theme.subText }]}
+                      >
                         Started at
                       </Text>
-                      <Text style={[styles.tripInfoValue, { color: theme.text }]}>
+                      <Text
+                        style={[styles.tripInfoValue, { color: theme.text }]}
+                      >
                         {startKm} km
                       </Text>
                     </View>
@@ -679,9 +801,9 @@ export default function Dashboard() {
                   style={[
                     styles.tripActionButton,
                     {
-                      backgroundColor: tripId ? '#ef4444' : theme.primary,
-                      borderColor: tripId ? '#dc2626' : theme.primary
-                    }
+                      backgroundColor: tripId ? "#ef4444" : theme.primary,
+                      borderColor: tripId ? "#dc2626" : theme.primary,
+                    },
                   ]}
                   onPress={() => setShowTripModal(true)}
                   activeOpacity={0.8}
@@ -709,7 +831,15 @@ export default function Dashboard() {
   );
 }
 
-function KpiCard({ title, value, theme }: { title: string; value: string; theme: any }) {
+function KpiCard({
+  title,
+  value,
+  theme,
+}: {
+  title: string;
+  value: string;
+  theme: any;
+}) {
   return (
     <View
       style={[
@@ -731,26 +861,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginTop: 8,
     marginBottom: 8,
-    alignItems: 'center',
+    alignItems: "center",
   },
   locationStatusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
     minWidth: 150,
-    justifyContent: 'center',
+    justifyContent: "center",
     marginBottom: 6,
   },
   statusIndicator: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 8,
   },
   statusDot: {
@@ -759,20 +889,20 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   statusText: {
-    color: 'white',
+    color: "white",
     fontSize: 12,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 0.5,
   },
   lastUpdateText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 2,
   },
   errorText: {
     fontSize: 11,
-    color: '#ef4444',
-    fontWeight: '600',
+    color: "#ef4444",
+    fontWeight: "600",
     marginTop: 2,
   },
 
@@ -801,11 +931,41 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "700",
     marginBottom: 6,
-    letterSpacing: 0.5
+    letterSpacing: 0.5,
   },
   kpiValue: {
     fontSize: 20,
-    fontWeight: "900"
+    fontWeight: "900",
+  },
+  returnPlantContainer: {
+    marginTop: 10,
+    paddingHorizontal: 16,
+  },
+  returnPlantButton: {
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    padding: 14,
+  },
+  returnPlantIcon: {
+    alignItems: "center",
+    borderRadius: 10,
+    height: 42,
+    justifyContent: "center",
+    marginRight: 12,
+    width: 42,
+  },
+  returnPlantTextWrap: {
+    flex: 1,
+  },
+  returnPlantTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  returnPlantSub: {
+    fontSize: 12,
+    marginTop: 3,
   },
 
   // Trip Tracker
@@ -824,44 +984,44 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   tripTrackerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginBottom: 16,
   },
   tripIconWrapper: {
     width: 48,
     height: 48,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   tripTrackerTitle: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: "800",
   },
   tripTrackerSubtitle: {
     fontSize: 13,
     marginTop: 2,
   },
   activeBadge: {
-    backgroundColor: '#10b981',
+    backgroundColor: "#10b981",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   pulseCircle: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginRight: 6,
   },
   activeText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 11,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 0.5,
   },
   tripInfoBox: {
@@ -870,8 +1030,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   tripInfoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   tripInfoLabel: {
@@ -879,29 +1039,29 @@ const styles = StyleSheet.create({
   },
   tripInfoValue: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   tripActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 14,
     borderRadius: 12,
     borderWidth: 1,
     gap: 8,
   },
   tripActionButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 0.3,
   },
 
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
   },
   modalContent: {
     borderTopLeftRadius: 24,
@@ -916,17 +1076,17 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
+    borderBottomColor: "rgba(0, 0, 0, 0.05)",
   },
   modalTitle: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: "800",
   },
   modalSubtitle: {
     fontSize: 14,
@@ -943,12 +1103,12 @@ const styles = StyleSheet.create({
   },
   inputLabel: {
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 10,
   },
   inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 2,
     borderRadius: 12,
     paddingHorizontal: 14,
@@ -960,7 +1120,7 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 
   // Photo Section
@@ -969,104 +1129,104 @@ const styles = StyleSheet.create({
     paddingTop: 24,
   },
   photoLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 10,
   },
   compressingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 6,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+    backgroundColor: "rgba(59, 130, 246, 0.1)",
   },
   compressingText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   photoButton: {
     borderWidth: 2,
-    borderStyle: 'dashed',
+    borderStyle: "dashed",
     borderRadius: 16,
     padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   cameraIconWrapper: {
     width: 72,
     height: 72,
     borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 16,
   },
   photoButtonText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 6,
   },
   photoButtonSubtext: {
     fontSize: 13,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 8,
   },
   compressionNote: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     marginTop: 4,
   },
   imagePreviewContainer: {
-    position: 'relative',
+    position: "relative",
   },
   imagePreview: {
-    width: '100%',
+    width: "100%",
     height: 220,
     borderRadius: 16,
-    resizeMode: 'cover',
+    resizeMode: "cover",
   },
   imageInfoOverlay: {
-    position: 'absolute',
+    position: "absolute",
     top: 12,
     left: 12,
   },
   compressionBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.9)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.9)",
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
     gap: 4,
   },
   compressionText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   retakeButton: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 12,
     right: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     gap: 6,
   },
   retakeText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 
   // Action Buttons
   actionButtons: {
-    flexDirection: 'row',
+    flexDirection: "row",
     paddingHorizontal: 20,
     paddingTop: 28,
     gap: 12,
@@ -1076,26 +1236,26 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 12,
     borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   cancelButtonText: {
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   submitButton: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
     gap: 8,
   },
   submitButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: "800",
     letterSpacing: 0.3,
   },
 });

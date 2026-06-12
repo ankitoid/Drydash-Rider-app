@@ -19,8 +19,8 @@ export class LocationService {
   private isTracking = false;
   private cachedUser: any = null;
 
-  private distanceInterval = 10;
-  private timeInterval = 10000; // 10 seconds for real-time tracking
+  private distanceInterval = 50;
+  private timeInterval = 120000;
 
   private constructor() { }
 
@@ -130,7 +130,7 @@ export class LocationService {
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync(TRACKING_CHANNEL_ID, {
         name: "Location Tracking",
-        description: "Persistent notification while live delivery tracking is active",
+        description: "Persistent notification while task distance tracking is active",
         importance: Notifications.AndroidImportance.MAX,
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         bypassDnd: true,
@@ -159,7 +159,6 @@ export class LocationService {
         notificationBody: "Live delivery location is being shared",
         notificationColor: "#10b981",
         killServiceOnDestroy: false,
-        notificationChannelId: TRACKING_CHANNEL_ID, // Use our MAX-importance channel
       },
     });
 

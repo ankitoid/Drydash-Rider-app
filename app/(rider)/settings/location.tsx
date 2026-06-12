@@ -22,10 +22,14 @@ export default function LocationSettings() {
 
   const handleToggleLocation = async () => {
     if (!isEnabled) {
-      const granted = await locationService.requestPermissions();
+      const permissionState = await locationService.checkPermissions();
+      const granted =
+        permissionState === "background" ||
+        (permissionState === "foreground" &&
+          (await locationService.requestBackgroundPermission()));
       if (granted) {
         setIsEnabled(true);
-        Alert.alert('Success', 'Location tracking enabled');
+        Alert.alert('Success', 'Task navigation tracking is ready');
       } else {
         Alert.alert(
           'Permission Required',
