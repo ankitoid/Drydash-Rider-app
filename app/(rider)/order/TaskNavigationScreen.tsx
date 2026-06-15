@@ -5,7 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useLowPowerMode } from "expo-battery";
 import * as KeepAwake from "expo-keep-awake";
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   Alert,
   AppState,
@@ -105,6 +105,9 @@ export default function TaskNavigationScreen({ orderId, type }: Props) {
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState<TaskDetails | null>(null);
   const [rawTaskData, setRawTaskData] = useState<any>(null);
+
+  const stableDestination = useMemo(() => task?.destination, [task?.destination?.latitude, task?.destination?.longitude]);
+  const stableDestinationLabel = useMemo(() => task?.address, [task?.address]);
 
   // DateTimePicker state (For Pickup Reschedule)
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -793,8 +796,8 @@ export default function TaskNavigationScreen({ orderId, type }: Props) {
           taskId={task?.taskId || orderId}
           taskType={type}
           rider={user}
-          destination={task?.destination}
-          destinationLabel={task?.address}
+          destination={stableDestination}
+          destinationLabel={stableDestinationLabel}
           onReached={openDetails}
         />
 

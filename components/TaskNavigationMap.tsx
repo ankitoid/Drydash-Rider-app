@@ -66,8 +66,8 @@ const GOOGLE_DIRECTIONS_KEY =
   "";
 const API_BASE = "https://api.shiptos.com/api/v1";
 
-const OFF_ROUTE_THRESHOLD_METERS = 100;
-const REROUTE_COOLDOWN_MS = 30000;
+const OFF_ROUTE_THRESHOLD_METERS = 250;
+const REROUTE_COOLDOWN_MS = 120000;
 
 const MANEUVER_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
   "turn-left": "arrow-back",
@@ -241,6 +241,13 @@ const buildRouteArrows = (coordinates: TrackingCoordinate[]) => {
   return arrows.slice(0, 18);
 };
 
+type CacheEntry = {
+  route: RouteInfo;
+  timestamp: number;
+};
+const routeCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 60 * 60 * 1000;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 export const TaskNavigationMap = ({
   taskId,
@@ -253,6 +260,8 @@ export const TaskNavigationMap = ({
   const { theme, isDark } = useTheme();
   const mapRef = useRef<MapView>(null);
   const lastRouteFetchRef = useRef(0);
+  const pendingRoutePromise = useRef<Promise<void> | null>(null);
+  const lastRerouteCheckRef = useRef(0);
 
   const [currentLocation, setCurrentLocation] = useState<TrackingCoordinate | null>(null);
   const [currentHeading, setCurrentHeading] = useState(0);
@@ -263,7 +272,6 @@ export const TaskNavigationMap = ({
   const [active, setActive] = useState(false);
   const [distanceKm, setDistanceKm] = useState(0);
   const [loading, setLoading] = useState(false);
-  // Replaces Alert.alert for the "still away" confirmation
   const [pendingFinish, setPendingFinish] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   const fitMap = useCallback((origin: TrackingCoordinate, target: TrackingCoordinate) => {
@@ -292,116 +300,147 @@ export const TaskNavigationMap = ({
         return;
       }
 
-      setRouteStatus(reason === "reroute" ? "rerouting" : "loading");
+      const distanceToDestMeters = getDistanceKm(origin, destination) * 1000;
+      if (distanceToDestMeters < 500) {
+        setRoute(null);
+        setRouteStatus("idle");
+        return;
+      }
 
-      try {
-        const routesRes = await fetch(
-          "https://routes.googleapis.com/directions/v2:computeRoutes",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Goog-Api-Key": GOOGLE_DIRECTIONS_KEY,
-              "X-Goog-FieldMask":
-                "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.navigationInstruction,routes.legs.steps.startLocation,routes.legs.steps.endLocation",
-            },
-            body: JSON.stringify({
-              origin: {
-                location: {
-                  latLng: { latitude: origin.latitude, longitude: origin.longitude },
-                },
-              },
-              destination: {
-                location: {
-                  latLng: { latitude: destination.latitude, longitude: destination.longitude },
-                },
-              },
-              travelMode: "TWO_WHEELER",
-              routingPreference: "TRAFFIC_AWARE",
-              computeAlternativeRoutes: true,
-              polylineQuality: "HIGH_QUALITY",
-              polylineEncoding: "ENCODED_POLYLINE",
-              languageCode: "en-IN",
-              units: "METRIC",
-            }),
-          },
-        );
-        const routesJson = await routesRes.json().catch(() => null);
-        const bestTwoWheelerRoute = pickBestRoute(routesJson?.routes ?? []);
-        const twoWheelerPolyline = bestTwoWheelerRoute?.polyline?.encodedPolyline;
-        const twoWheelerSteps = bestTwoWheelerRoute?.legs?.[0]?.steps ?? [];
-
-        if (twoWheelerPolyline && twoWheelerSteps.length) {
-          const steps: DirectionStep[] = twoWheelerSteps.map((step: any) => ({
-            instruction:
-              step.navigationInstruction?.instructions ||
-              step.navigationInstruction?.maneuver ||
-              "Continue",
-            distanceText: formatDistance(step.distanceMeters),
-            durationText: formatDuration(step.staticDuration),
-            maneuver: step.navigationInstruction?.maneuver,
-            startLocation: toRoutesCoordinate(step.startLocation),
-            endLocation: toRoutesCoordinate(step.endLocation),
-          }));
-          setRoute({
-            coordinates: decodePolyline(twoWheelerPolyline),
-            distanceText: formatDistance(bestTwoWheelerRoute.distanceMeters),
-            durationText: formatDuration(bestTwoWheelerRoute.duration),
-            steps,
-            mode: "two_wheeler",
-          });
-          setRouteStatus("idle");
-          lastRouteFetchRef.current = Date.now();
-          return;
-        }
-
-        const originParam = `${origin.latitude},${origin.longitude}`;
-        const destParam = `${destination.latitude},${destination.longitude}`;
-        const url =
-          "https://maps.googleapis.com/maps/api/directions/json" +
-          `?origin=${originParam}&destination=${destParam}` +
-          `&mode=driving&alternatives=true&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_KEY}`;
-        const res = await fetch(url);
-        const json = await res.json();
-        const firstRoute = [...(json.routes ?? [])].sort((a: any, b: any) => {
-          const legA = a.legs?.[0];
-          const legB = b.legs?.[0];
-          const dA = legA?.duration_in_traffic?.value ?? legA?.duration?.value ?? Infinity;
-          const dB = legB?.duration_in_traffic?.value ?? legB?.duration?.value ?? Infinity;
-          if (dA !== dB) return dA - dB;
-          return (legA?.distance?.value ?? Infinity) - (legB?.distance?.value ?? Infinity);
-        })[0];
-        const leg = firstRoute?.legs?.[0];
-        const polyline = firstRoute?.overview_polyline?.points;
-
-        if (!polyline || !leg?.steps?.length) {
-          setRoute(null);
-          setRouteStatus("unavailable");
-          return;
-        }
-
-        const steps: DirectionStep[] = leg.steps.map((step: any) => ({
-          instruction: stripHtml(step.html_instructions || "Continue"),
-          distanceText: step.distance?.text,
-          durationText: step.duration?.text,
-          maneuver: step.maneuver,
-          startLocation: toCoordinate(step.start_location),
-          endLocation: toCoordinate(step.end_location),
-        }));
-        setRoute({
-          coordinates: decodePolyline(polyline),
-          distanceText: leg.distance?.text,
-          durationText: leg.duration_in_traffic?.text ?? leg.duration?.text,
-          steps,
-          mode: "driving",
-        });
+      const cacheKey = `${origin.latitude},${origin.longitude}|${destination.latitude},${destination.longitude}`;
+      const cached = routeCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+        setRoute(cached.route);
         setRouteStatus("idle");
         lastRouteFetchRef.current = Date.now();
-      } catch (err) {
-        console.warn("Failed to load directions route", err);
-        setRoute(null);
-        setRouteStatus("unavailable");
+        return;
       }
+
+      if (pendingRoutePromise.current) {
+        await pendingRoutePromise.current;
+        return;
+      }
+
+      setRouteStatus(reason === "reroute" ? "rerouting" : "loading");
+
+      pendingRoutePromise.current = (async () => {
+        try {
+          const routesRes = await fetch(
+            "https://routes.googleapis.com/directions/v2:computeRoutes",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": GOOGLE_DIRECTIONS_KEY,
+                "X-Goog-FieldMask":
+                  "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.navigationInstruction,routes.legs.steps.startLocation,routes.legs.steps.endLocation",
+              },
+              body: JSON.stringify({
+                origin: {
+                  location: {
+                    latLng: { latitude: origin.latitude, longitude: origin.longitude },
+                  },
+                },
+                destination: {
+                  location: {
+                    latLng: { latitude: destination.latitude, longitude: destination.longitude },
+                  },
+                },
+                travelMode: "TWO_WHEELER",
+                routingPreference: "TRAFFIC_AWARE",
+                computeAlternativeRoutes: true,
+                polylineQuality: "OVERVIEW",
+                polylineEncoding: "ENCODED_POLYLINE",
+                languageCode: "en-IN",
+                units: "METRIC",
+              }),
+            },
+          );
+          const routesJson = await routesRes.json().catch(() => null);
+          const bestTwoWheelerRoute = pickBestRoute(routesJson?.routes ?? []);
+          const twoWheelerPolyline = bestTwoWheelerRoute?.polyline?.encodedPolyline;
+          const twoWheelerSteps = bestTwoWheelerRoute?.legs?.[0]?.steps ?? [];
+
+          if (twoWheelerPolyline && twoWheelerSteps.length) {
+            const steps: DirectionStep[] = twoWheelerSteps.map((step: any) => ({
+              instruction:
+                step.navigationInstruction?.instructions ||
+                step.navigationInstruction?.maneuver ||
+                "Continue",
+              distanceText: formatDistance(step.distanceMeters),
+              durationText: formatDuration(step.staticDuration),
+              maneuver: step.navigationInstruction?.maneuver,
+              startLocation: toRoutesCoordinate(step.startLocation),
+              endLocation: toRoutesCoordinate(step.endLocation),
+            }));
+            const newRoute: RouteInfo = {
+              coordinates: decodePolyline(twoWheelerPolyline),
+              distanceText: formatDistance(bestTwoWheelerRoute.distanceMeters),
+              durationText: formatDuration(bestTwoWheelerRoute.duration),
+              steps,
+              mode: "two_wheeler",
+            };
+            setRoute(newRoute);
+            routeCache.set(cacheKey, { route: newRoute, timestamp: Date.now() });
+            setRouteStatus("idle");
+            lastRouteFetchRef.current = Date.now();
+            return;
+          }
+
+          const originParam = `${origin.latitude},${origin.longitude}`;
+          const destParam = `${destination.latitude},${destination.longitude}`;
+          const url =
+            "https://maps.googleapis.com/maps/api/directions/json" +
+            `?origin=${originParam}&destination=${destParam}` +
+            `&mode=driving&alternatives=true&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_KEY}`;
+          const res = await fetch(url);
+          const json = await res.json();
+          const firstRoute = [...(json.routes ?? [])].sort((a: any, b: any) => {
+            const legA = a.legs?.[0];
+            const legB = b.legs?.[0];
+            const dA = legA?.duration_in_traffic?.value ?? legA?.duration?.value ?? Infinity;
+            const dB = legB?.duration_in_traffic?.value ?? legB?.duration?.value ?? Infinity;
+            if (dA !== dB) return dA - dB;
+            return (legA?.distance?.value ?? Infinity) - (legB?.distance?.value ?? Infinity);
+          })[0];
+          const leg = firstRoute?.legs?.[0];
+          const polyline = firstRoute?.overview_polyline?.points;
+
+          if (!polyline || !leg?.steps?.length) {
+            setRoute(null);
+            setRouteStatus("unavailable");
+            return;
+          }
+
+          const steps: DirectionStep[] = leg.steps.map((step: any) => ({
+            instruction: stripHtml(step.html_instructions || "Continue"),
+            distanceText: step.distance?.text,
+            durationText: step.duration?.text,
+            maneuver: step.maneuver,
+            startLocation: toCoordinate(step.start_location),
+            endLocation: toCoordinate(step.end_location),
+          }));
+          const fallbackRoute: RouteInfo = {
+            coordinates: decodePolyline(polyline),
+            distanceText: leg.distance?.text,
+            durationText: leg.duration_in_traffic?.text ?? leg.duration?.text,
+            steps,
+            mode: "driving",
+          };
+          setRoute(fallbackRoute);
+          routeCache.set(cacheKey, { route: fallbackRoute, timestamp: Date.now() });
+          setRouteStatus("idle");
+          lastRouteFetchRef.current = Date.now();
+        } catch (err) {
+          console.warn("Failed to load directions route", err);
+          setRoute(null);
+          setRouteStatus("unavailable");
+        } finally {
+          pendingRoutePromise.current = null;
+        }
+      })();
+
+      await pendingRoutePromise.current;
     },
     [destination],
   );
@@ -418,8 +457,12 @@ export const TaskNavigationMap = ({
   const checkReroute = useCallback(
     (coords: TrackingCoordinate) => {
       if (!active || !route?.coordinates?.length) return;
+      const now = Date.now();
+      if (now - lastRerouteCheckRef.current < 15000) return;
+      lastRerouteCheckRef.current = now;
+
       const distanceFromRoute = distanceToRouteMeters(coords, route.coordinates);
-      const canReroute = Date.now() - lastRouteFetchRef.current > REROUTE_COOLDOWN_MS;
+      const canReroute = now - lastRouteFetchRef.current > REROUTE_COOLDOWN_MS;
       if (distanceFromRoute > OFF_ROUTE_THRESHOLD_METERS && canReroute)
         fetchRoute(coords, "reroute");
     },
