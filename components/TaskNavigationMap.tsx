@@ -64,6 +64,7 @@ const GOOGLE_DIRECTIONS_KEY =
   Constants.expoConfig?.android?.config?.googleMaps?.apiKey ||
   (Constants.expoConfig?.extra?.googleMapsDirectionsApiKey as string) ||
   "";
+const ENABLE_GOOGLE_ROUTES = Constants.expoConfig?.extra?.enableGoogleRoutes === true;
 const API_BASE = "https://api.shiptos.com/api/v1";
 
 const OFF_ROUTE_THRESHOLD_METERS = 250;
@@ -294,7 +295,10 @@ export const TaskNavigationMap = ({
   const fetchRoute = useCallback(
     async (origin: TrackingCoordinate, reason: "initial" | "reroute") => {
       if (!destination) return;
-      if (!GOOGLE_DIRECTIONS_KEY || GOOGLE_DIRECTIONS_KEY.startsWith("ADD_")) {
+      if (!ENABLE_GOOGLE_ROUTES ||
+        !GOOGLE_DIRECTIONS_KEY ||
+        GOOGLE_DIRECTIONS_KEY.startsWith("ADD_")
+      ) {
         setRoute(null);
         setRouteStatus("unavailable");
         return;
@@ -346,9 +350,9 @@ export const TaskNavigationMap = ({
                     latLng: { latitude: destination.latitude, longitude: destination.longitude },
                   },
                 },
-                travelMode: "TWO_WHEELER",
-                routingPreference: "TRAFFIC_AWARE",
-                computeAlternativeRoutes: true,
+                travelMode: "DRIVE",
+                routingPreference: "TRAFFIC_UNAWARE",
+                computeAlternativeRoutes: false,
                 polylineQuality: "OVERVIEW",
                 polylineEncoding: "ENCODED_POLYLINE",
                 languageCode: "en-IN",
@@ -378,7 +382,7 @@ export const TaskNavigationMap = ({
               distanceText: formatDistance(bestTwoWheelerRoute.distanceMeters),
               durationText: formatDuration(bestTwoWheelerRoute.duration),
               steps,
-              mode: "two_wheeler",
+              mode: "driving",
             };
             setRoute(newRoute);
             routeCache.set(cacheKey, { route: newRoute, timestamp: Date.now() });
@@ -392,7 +396,7 @@ export const TaskNavigationMap = ({
           const url =
             "https://maps.googleapis.com/maps/api/directions/json" +
             `?origin=${originParam}&destination=${destParam}` +
-            `&mode=driving&alternatives=true&departure_time=now&traffic_model=best_guess&key=${GOOGLE_DIRECTIONS_KEY}`;
+            `&mode=driving&alternatives=false&key=${GOOGLE_DIRECTIONS_KEY}`;
           const res = await fetch(url);
           const json = await res.json();
           const firstRoute = [...(json.routes ?? [])].sort((a: any, b: any) => {
@@ -528,7 +532,8 @@ export const TaskNavigationMap = ({
     if (!currentLocation || !destination) return;
     if (active) focusOnRider(currentLocation);
     else fitMap(currentLocation, destination);
-    if (!route && routeStatus === "idle") fetchRoute(currentLocation, "initial");
+    if (ENABLE_GOOGLE_ROUTES && active && !route && routeStatus === "idle")
+      fetchRoute(currentLocation, "initial");
   }, [active, currentLocation, destination, fetchRoute, fitMap, focusOnRider, route, routeStatus]);
 
   useEffect(() => {
@@ -776,16 +781,23 @@ export const TaskNavigationMap = ({
   }
 
   const nextStep = getNextStep();
-  const polyline = route?.coordinates ?? [];
-  const routeArrows = buildRouteArrows(polyline);
+  const directDistanceMeters = currentLocation
+    ? getDistanceKm(currentLocation, destination) * 1000
+    : undefined;
+  const polyline =
+    route?.coordinates ??
+    (currentLocation ? [currentLocation, destination] : []);
+  const routeArrows = route ? buildRouteArrows(polyline) : [];
   const isLoadingRoute = routeStatus === "loading" || routeStatus === "rerouting";
   const routeSubtitle = isLoadingRoute
     ? routeStatus === "rerouting"
       ? "Rerouting..."
       : "Loading road route..."
     : route?.distanceText
-      ? `${route.mode === "two_wheeler" ? "Bike route" : "Car route fallback"} • ${route.distanceText} • ${route.durationText ?? ""}`
-      : "Road route unavailable";
+      ? `Road route - ${route.distanceText} - ${route.durationText ?? ""}`
+      : directDistanceMeters
+        ? `Approx direct distance - ${formatDistance(directDistanceMeters)}`
+        : "Route preview ready";
 
   return (
     <View

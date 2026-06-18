@@ -3,6 +3,8 @@ module.exports = ({ config }) => {
     process.env.GOOGLE_MAPS_API_KEY ||
     process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY ||
     "";
+  const enableGoogleRoutes =
+    process.env.EXPO_PUBLIC_ENABLE_GOOGLE_ROUTES === "true";
 
   // Create the base config structure if it doesn't exist
   const android = config.android || {};
@@ -30,6 +32,8 @@ module.exports = ({ config }) => {
     };
     updatedConfig.extra.googleMapsDirectionsApiKey = googleMapsApiKey;
   }
+
+  updatedConfig.extra.enableGoogleRoutes = enableGoogleRoutes;
 
   return updatedConfig;
 };
