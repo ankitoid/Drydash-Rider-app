@@ -1,20 +1,20 @@
 {
   "expo": {
-    "name": "dry-dash-rider",
-    "slug": "dry-dash-rider",
+    "name": "shiptos-rider",
+    "slug": "shiptos-rider",
     "version": "1.0.5",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "drydashrider",
+    "scheme": "shiptosrider",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.shiptos.captain",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "We need your location to track delivery progress",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "We need your location to track delivery progress",
         "NSLocationAlwaysUsageDescription": "We need your location to track delivery progress"
-      },
-      "bundleIdentifier": "com.drydash.rider"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -24,7 +24,7 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.drydash.rider",
+      "package": "com.shiptos.captain",
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "POST_NOTIFICATIONS",
@@ -68,7 +68,8 @@
           }
         }
       ],
-      "@react-native-community/datetimepicker", "expo-font"
+      "@react-native-community/datetimepicker",
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,

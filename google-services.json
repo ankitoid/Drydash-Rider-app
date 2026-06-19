@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "677197589463",
-    "project_id": "shiptos-rider-fcm",
-    "storage_bucket": "shiptos-rider-fcm.firebasestorage.app"
+    "project_number": "989139662500",
+    "project_id": "shiptos-rider",
+    "storage_bucket": "shiptos-rider.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:677197589463:android:628fe83a974543e5ca3992",
+        "mobilesdk_app_id": "1:989139662500:android:41e8b811ccd288a38fd831",
         "android_client_info": {
-          "package_name": "com.drydash.rider"
+          "package_name": "com.shiptos.captain"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBRQPZlEr_hnHwV4XS_wjKfmzoAMFJwMsQ"
+          "current_key": "AIzaSyCsvq6WlU6YnwQ9Itf01X-MQ99saUsEOJc"
         }
       ],
       "services": {
