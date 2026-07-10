@@ -1,9 +1,11 @@
 import * as Location from "expo-location";
 import * as Battery from "expo-battery";
 import * as Notifications from "expo-notifications";
+import { API_BASE_URL } from "@/constants/apiConfig";
 import { LOCATION_TASK_NAME } from "./backgroundLocationTask";
+import { backgroundTrackingService } from "./backgroundTrackingService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
+import { NativeModules, Platform } from "react-native";
 
 const TRACKING_CHANNEL_ID = "location-tracking";
 
@@ -17,6 +19,7 @@ export type PermissionState = "denied" | "foreground" | "background";
 export class LocationService {
   private static instance: LocationService;
   private isTracking = false;
+  private usingNativeService = false;
   private cachedUser: any = null;
 
   private distanceInterval = 50;
@@ -115,12 +118,62 @@ export class LocationService {
       console.warn("LocationService.startTracking: failed to read config", e);
     }
 
+    if (Platform.OS === "android") {
+      try {
+        const cachedUser = this.cachedUser ?? JSON.parse((await AsyncStorage.getItem(BG_USER_KEY)) || "null");
+        const riderId = cachedUser?.id;
+
+        if (!riderId) {
+          throw new Error("Missing cached rider id for native tracking");
+        }
+
+        const nativeModule = NativeModules.RiderTrackingModule;
+        if (!nativeModule?.startTrip) {
+          throw new Error("Native rider tracking module not available");
+        }
+
+        await nativeModule.startTrip(riderId, API_BASE_URL);
+        this.isTracking = true;
+        this.usingNativeService = true;
+        await this.setWasTracking(true);
+        console.log("✅ Native Android tracking started (foreground service active)");
+
+        // ── Ensure any stale Expo background task is killed ──
+        try {
+          const isExpoRunning = await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+          if (isExpoRunning) {
+            await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+            console.log("🧹 Stopped stale Expo background task");
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        // ── Also start the background-actions layer (keeps JS thread + socket alive) ──
+        // This runs IN PARALLEL with the native service. The native service posts
+        // HTTP every 5s as a pure-native backup, while this layer keeps the socket
+        // connected and emits riderLocationUpdate. If the JS task gets killed by an
+        // aggressive OEM, the native service keeps the admin panel updated.
+        try {
+          await backgroundTrackingService.start();
+          console.log("✅ Background-actions layer started (socket kept alive in background)");
+        } catch (bgErr) {
+          console.warn("⚠️ Background-actions layer failed to start (native service still active):", bgErr);
+        }
+        return;
+      } catch (nativeErr) {
+        console.warn("Native Android tracking start failed, falling back to Expo tracking:", nativeErr);
+        this.usingNativeService = false;
+      }
+    }
+
     const alreadyRunning =
       await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
 
     if (alreadyRunning) {
       console.log("⚠️ Background task already running");
       this.isTracking = true;
+      this.usingNativeService = false;
       await this.setWasTracking(true);
       return;
     }
@@ -163,30 +216,98 @@ export class LocationService {
     });
 
     this.isTracking = true;
+    this.usingNativeService = false;
     await this.setWasTracking(true);
     console.log("✅ Background tracking started (foreground service active)");
   }
 
   async stopTracking(): Promise<void> {
+    // ── Stop the background-actions layer first (so the JS loop exits cleanly) ──
     try {
+      await backgroundTrackingService.stop();
+    } catch (e) {
+      console.warn("Background-actions stop failed:", e);
+    }
+
+    try {
+      if (Platform.OS === "android") {
+        const nativeModule = NativeModules.RiderTrackingModule;
+        if (nativeModule?.stopTrip) {
+          await nativeModule.stopTrip();
+          console.log("✅ Native Android tracking stopped");
+        }
+      }
+
+      // Also clear tracking extras on stop
+      try {
+        const nativeModule = NativeModules.RiderTrackingModule;
+        if (nativeModule?.updateTrackingExtras) {
+          await nativeModule.updateTrackingExtras("");
+        }
+      } catch {
+        // non-critical
+      }
+
       const running =
         await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
       if (running) {
         await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
         console.log("✅ Background tracking stopped");
-      } else {
-        console.log("⚠️ Background tracking was not running");
       }
     } catch (e) {
       console.warn("stopTracking failed", e);
     }
 
     this.isTracking = false;
+    this.usingNativeService = false;
     await this.setWasTracking(false);
   }
 
   isTrackingActive(): boolean {
     return this.isTracking;
+  }
+
+  /**
+   * Whether the native Android foreground service is the active tracking mechanism.
+   * Used by the watchdog to skip the Expo task check.
+   */
+  isUsingNativeService(): boolean {
+    return this.usingNativeService;
+  }
+
+  /**
+   * Check if the native foreground service is currently running.
+   * Calls the native module's isServiceRunning method.
+   */
+  async isNativeServiceRunning(): Promise<boolean> {
+    if (Platform.OS !== "android") return false;
+    try {
+      const nativeModule = NativeModules.RiderTrackingModule;
+      if (!nativeModule?.isServiceRunning) return false;
+      return await nativeModule.isServiceRunning();
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Update the taskTracking extras sent by the native HTTP POST.
+   * Call this when a navigation leg starts or ends.
+   * @param extras - JSON string of the taskTracking object, or null to clear
+   */
+  async updateNativeTrackingExtras(extras: string | null): Promise<void> {
+    if (Platform.OS !== "android") return;
+    try {
+      const nativeModule = NativeModules.RiderTrackingModule;
+      if (!nativeModule?.updateTrackingExtras) {
+        console.warn("Native updateTrackingExtras not available");
+        return;
+      }
+      await nativeModule.updateTrackingExtras(extras ?? "");
+      console.log("✅ Native tracking extras updated");
+    } catch (e) {
+      console.warn("Failed to update native tracking extras:", e);
+    }
   }
 
   /* ----------- AUTO-RESUME SUPPORT ----------- */

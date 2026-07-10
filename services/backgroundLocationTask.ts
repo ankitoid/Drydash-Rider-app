@@ -1,13 +1,11 @@
 // services/backgroundLocationTask.ts
 import { locationService } from "@/services/locationService";
-import { socket } from "@/services/socket";
+import { sendRiderLocationUpdate } from "@/services/riderLocationUpdate";
 import { trackingLegService } from "@/services/trackingLegService";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as TaskManager from "expo-task-manager";
 
 export const LOCATION_TASK_NAME = "BACKGROUND_LOCATION_TASK";
-
-const API_BASE = "https://api.shiptos.com";
 
 TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
   if (error) {
@@ -53,59 +51,26 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }: any) => {
       }
     : null;
 
-  console.log("BG sending location:", payload.location, taskTracking);
+  console.log("BG sending location:", payload.location, taskTracking, "time===>>> ", (new Date().toISOString()));
 
-  let sentViaSocket = false;
   try {
-    if (socket.connected) {
-      socket.emit("riderLocationUpdate", {
-        ...payload,
-        taskTracking,
-      });
-      sentViaSocket = true;
-      console.log("BG: sent via socket");
-    }
+    const result = await sendRiderLocationUpdate({
+      riderId: user.id,
+      lat: payload.location.lat,
+      lng: payload.location.lng,
+      speed: payload.speed,
+      bearing: payload.bearing,
+      batteryLevel: payload.batteryLevel,
+      status: "active",
+      taskTracking,
+    });
+    console.log(
+      result.sentViaSocket
+        ? "BG: sent via socket"
+        : "BG: sent via HTTP fallback",
+    );
   } catch (e) {
-    console.warn("BG: socket.emit failed", e);
-  }
-
-  if (!sentViaSocket) {
-    try {
-      console.log("BG: socket dead, using HTTP fallback...");
-      const res = await fetch(`${API_BASE}/api/v1/location/update`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          riderId: user.id,
-          lat: payload.location.lat,
-          lng: payload.location.lng,
-          speed: payload.speed,
-          bearing: payload.bearing,
-          batteryLevel: payload.batteryLevel,
-          status: "active",
-          taskTracking,
-        }),
-      });
-
-      if (res.ok) {
-        console.log("BG: sent via HTTP fallback");
-      } else {
-        console.warn("BG: HTTP fallback returned", res.status);
-      }
-    } catch (httpErr) {
-      console.error("BG: HTTP fallback failed", httpErr);
-    }
-
-    try {
-      if (!socket.connected) {
-        socket.connect();
-        socket.once("connect", () => {
-          socket.emit("joinRider", { riderId: user.id });
-        });
-      }
-    } catch {
-      // Socket reconnect is best-effort in the background task.
-    }
+    console.error("BG: location update failed", e);
   }
 
   try {

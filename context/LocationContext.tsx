@@ -1,15 +1,29 @@
 import { locationService } from "@/services/locationService";
 import { LOCATION_TASK_NAME } from "@/services/backgroundLocationTask";
-import { promptBatteryOptimization } from "@/services/batteryOptimization";
-import { socket } from "@/services/socket";
+import { sendRiderLocationUpdate } from "@/services/riderLocationUpdate";
+import { socket, startSocketKeepalive, stopSocketKeepalive } from "@/services/socket";
+import {
+  startLocationSharingFlow,
+  stopLocationSharingFlow,
+} from "@/services/NavigationService";
+import { showMiniWindow, hideMiniWindow, getActiveMiniWindow } from "@/services/OverlayManager";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Alert,
   AppState,
   AppStateStatus,
   InteractionManager,
+  NativeEventEmitter,
+  NativeModules,
   Platform,
 } from "react-native";
 import { useAuth } from "./useAuth";
@@ -19,6 +33,10 @@ interface LocationContextType {
   lastLocation: Location.LocationObject | null;
   toggleTracking: () => Promise<void>;
   error: string | null;
+  /** Whether a PiP window is currently active */
+  isPiPActive: boolean;
+  /** Whether a floating overlay is currently active */
+  isOverlayActive: boolean;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(
@@ -32,6 +50,62 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user } = useAuth();
+  const nativeTrackingEmitter = useMemo(() => {
+    const { RiderTrackingModule } = NativeModules;
+    return RiderTrackingModule
+      ? new NativeEventEmitter(RiderTrackingModule)
+      : null;
+  }, []);
+
+  const [isTracking, setIsTracking] = useState(false);
+  const [lastLocation, setLastLocation] =
+    useState<Location.LocationObject | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isPiPActive, setIsPiPActive] = useState(false);
+  const [isOverlayActive, setIsOverlayActive] = useState(false);
+
+  useEffect(() => {
+    const sub = nativeTrackingEmitter?.addListener(
+      "onLocationUpdate",
+      async (loc) => {
+        const lat = Number(loc?.latitude);
+        const lng = Number(loc?.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !user?._id) {
+          return;
+        }
+
+        setLastLocation({
+          coords: {
+            latitude: lat,
+            longitude: lng,
+            altitude: null,
+            accuracy: loc?.accuracy ?? null,
+            altitudeAccuracy: null,
+            heading: loc?.bearing ?? 0,
+            speed: loc?.speed ?? 0,
+          },
+          timestamp: loc?.timestamp ?? Date.now(),
+        });
+
+        if (Platform.OS !== "android") {
+          try {
+            await sendRiderLocationUpdate({
+              riderId: user._id,
+              lat,
+              lng,
+              speed: loc?.speed ?? 0,
+              bearing: loc?.bearing ?? 0,
+              batteryLevel: loc?.batteryLevel ?? 100,
+              status: "active",
+            });
+          } catch (err) {
+            console.warn("Native location forwarding failed:", err);
+          }
+        }
+        console.log("Native location received:", loc);
+      });
+    return () => sub?.remove();
+  }, [nativeTrackingEmitter, user?._id]);
 
   const appState = useRef<AppStateStatus>(AppState.currentState);
   const trackingRef = useRef(false);
@@ -39,11 +113,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const foregroundSubscriptionRef =
     useRef<Location.LocationSubscription | null>(null);
-
-  const [isTracking, setIsTracking] = useState(false);
-  const [lastLocation, setLastLocation] =
-    useState<Location.LocationObject | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   /* ---------- FOREGROUND LOCATION ---------- */
 
@@ -125,6 +194,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         trackingRef.current = true;
         setIsTracking(true);
         await startForegroundWatcher();
+        startSocketKeepalive(); // keep socket alive in background
         startWatchdog(); // Start the watchdog after auto-resume
         console.log("✅ Auto-resume: tracking restored");
       } catch (err) {
@@ -142,9 +212,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
   /* ---------- WATCHDOG ---------- */
   //
-  // Periodically checks if the background task is still running.
-  // If someone dismisses the notification or OS kills the service,
-  // the watchdog detects it, shows an alert, and restarts tracking.
+  // Periodically checks if tracking is still running.
+  // On Android with the native foreground service, we check the native
+  // service state (NOT the Expo task, which isn't used in that mode).
+  // On other platforms / Expo fallback, we check the Expo background task.
 
   const startWatchdog = () => {
     // Clear any existing watchdog
@@ -156,11 +227,27 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!trackingRef.current) return; // Not supposed to be tracking
 
       try {
+        // ── Native Android path: check the foreground service directly ──
+        if (locationService.isUsingNativeService()) {
+          const nativeRunning = await locationService.isNativeServiceRunning();
+          if (!nativeRunning) {
+            console.log("🚨 Watchdog: native service stopped, restarting...");
+            try {
+              await locationService.startTracking();
+              console.log("✅ Watchdog: native tracking restarted");
+            } catch (restartErr) {
+              console.error("❌ Watchdog: failed to restart native tracking", restartErr);
+            }
+          }
+          return;
+        }
+
+        // ── Expo fallback path: check the background task ──
         const stillRunning =
           await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
 
         if (!stillRunning) {
-          console.log("🚨 Watchdog: tracking stopped unexpectedly, restarting...");
+          console.log("🚨 Watchdog: Expo task stopped unexpectedly, restarting...");
 
           // Show alert to user
           Alert.alert(
@@ -195,6 +282,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => {
       stopWatchdog();
       stopForegroundWatcher();
+      stopSocketKeepalive();
     };
   }, []);
 
@@ -213,79 +301,20 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
-      const permissionState = await locationService.checkPermissions();
+      // ── Run the full 9-step permission + service orchestration ──
+      const result = await startLocationSharingFlow({
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+      });
 
-      if (permissionState === "denied") {
-        Alert.alert(
-          "Location Permission Required",
-          "Shiptos needs location access to track deliveries. Please grant permission.",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Grant Permission",
-              onPress: async () => {
-                // Retry after user acknowledges
-                const retry = await locationService.checkPermissions();
-                if (retry !== "denied") {
-                  // Release lock and try again
-                  lockRef.current = false;
-                  await startTracking();
-                } else {
-                  setError("Location permission denied");
-                }
-              },
-            },
-          ],
-        );
+      if (!result.success) {
+        console.warn(`[LocationContext] startLocationSharingFlow stopped at step "${result.step}": ${result.reason}`);
+        setError(result.reason);
         return;
       }
 
-      if (permissionState === "foreground") {
-        Alert.alert(
-          "Background Location Needed",
-          "For continuous delivery tracking, please allow location access 'All the time' in the next screen.",
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Continue",
-              onPress: async () => {
-                const granted =
-                  await locationService.requestBackgroundPermission();
-                if (granted) {
-                  // Release lock and recursively call startTracking now that we have permission
-                  lockRef.current = false;
-                  await startTracking();
-                } else {
-                  setError("Background location permission denied");
-                  Alert.alert(
-                    "Permission Denied",
-                    "Background location is required for delivery tracking. You can enable it later in Settings.",
-                  );
-                }
-              },
-            },
-          ],
-        );
-        return;
-      }
-
-      // background granted ✅
-      console.log(
-        "✅ Background location permission granted, starting tracking...",
-      );
-
-      // Prompt user to disable battery optimization (like Google Maps does)
-      // This is the #1 reason background tracking gets killed on Android
-      const batteryPrompted = await AsyncStorage.getItem("battery_opt_prompted");
-      if (Platform.OS === "android" && !batteryPrompted) {
-        await promptBatteryOptimization();
-        await AsyncStorage.setItem("battery_opt_prompted", "true");
-      }
-
-      await locationService.setCachedUser(user);
-
-      await locationService.startTracking();
-
+      // Emit socket status update
       if (socket.connected) {
         socket.emit("riderStatusUpdate", {
           riderId: user._id,
@@ -297,6 +326,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsTracking(true);
       setError(null);
       await startForegroundWatcher();
+
+      // Start the socket keepalive so the connection stays alive in the background
+      startSocketKeepalive();
 
       // Start the watchdog to guard against notification dismissal
       startWatchdog();
@@ -326,6 +358,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       // Stop watchdog first
       stopWatchdog();
+
+      // Stop the socket keepalive
+      stopSocketKeepalive();
 
       await locationService.stopTracking();
       stopForegroundWatcher();
@@ -365,41 +400,75 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /* ---------- APP STATE: FOREGROUND RECOVERY ---------- */
+  /* ---------- APP STATE: FOREGROUND RECOVERY + MINI-WINDOW ---------- */
   //
-  // When the user brings the app back to the foreground, check if
-  // the background task is still alive. If the OS killed it, restart.
+  // When the app goes to background: show PiP or floating overlay.
+  // When the app returns to foreground: dismiss the mini-window and check
+  // if tracking is still alive. If the OS killed it, restart.
 
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {
       console.log("📱 App state:", nextState);
 
-      if (
-        nextState === "active" &&
-        appState.current.match(/inactive|background/) &&
-        trackingRef.current
-      ) {
-        // App returning to foreground while tracking should be active
+      const wasBackground = appState.current.match(/inactive|background/);
+      const goingBackground = nextState.match(/inactive|background/);
+      const returningToForeground = nextState === "active" && wasBackground;
+
+      // ── Going to background: show mini-window ────────────────────────────
+      if (goingBackground && nextState !== "inactive" && trackingRef.current) {
         try {
-          const stillRunning =
-            await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
+          await showMiniWindow();
+          const active = getActiveMiniWindow();
+          setIsPiPActive(active === "pip");
+          setIsOverlayActive(active === "overlay");
+        } catch (e) {
+          console.warn("[LocationContext] showMiniWindow failed:", e);
+        }
+      }
 
-          if (!stillRunning) {
-            console.log(
-              "⚠️ Background task was killed, restarting...",
-            );
+      // ── Returning to foreground ───────────────────────────────────────────
+      if (returningToForeground) {
+        // Dismiss mini-window
+        try {
+          await hideMiniWindow();
+          setIsPiPActive(false);
+          setIsOverlayActive(false);
+        } catch (e) {
+          console.warn("[LocationContext] hideMiniWindow failed:", e);
+        }
 
-            Alert.alert(
-              "⚠️ Tracking Restarted",
-              "Location tracking was interrupted while in the background. It has been automatically restarted.",
-              [{ text: "OK" }],
-            );
+        // Check if tracking is still alive
+        if (trackingRef.current) {
+          try {
+            // ── Native Android path: check the foreground service directly ──
+            if (locationService.isUsingNativeService()) {
+              const nativeRunning = await locationService.isNativeServiceRunning();
+              if (!nativeRunning) {
+                console.log("⚠️ Native service was killed, restarting...");
+                await locationService.startTracking();
+                console.log("✅ Native service restarted on foreground return");
+              }
+            } else {
+              // ── Expo fallback path: check the background task ──
+              const stillRunning =
+                await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
 
-            await locationService.startTracking();
-            console.log("✅ Background task restarted on foreground return");
+              if (!stillRunning) {
+                console.log("⚠️ Background task was killed, restarting...");
+
+                Alert.alert(
+                  "⚠️ Tracking Restarted",
+                  "Location tracking was interrupted while in the background. It has been automatically restarted.",
+                  [{ text: "OK" }],
+                );
+
+                await locationService.startTracking();
+                console.log("✅ Background task restarted on foreground return");
+              }
+            }
+          } catch (err) {
+            console.error("❌ Foreground recovery failed:", err);
           }
-        } catch (err) {
-          console.error("❌ Foreground recovery failed:", err);
         }
       }
 
@@ -415,6 +484,8 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     lastLocation,
     toggleTracking,
     error,
+    isPiPActive,
+    isOverlayActive,
   };
 
   return (

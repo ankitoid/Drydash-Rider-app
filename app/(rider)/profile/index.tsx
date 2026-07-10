@@ -94,6 +94,7 @@ export default function RiderProfile() {
         <MenuRow icon="person-outline" label="Edit Profile" text={TEXT} />
         <MenuRow icon="document-text-outline" label="Documents" text={TEXT} />
         <MenuRow icon="wallet-outline" label="Bank & Payouts" text={TEXT} />
+        <MenuRow icon="location-outline" label="Tracking Setup" text={TEXT} onPress={() => router.push("/(rider)/settings/location")} />
         <MenuRow icon="shield-checkmark-outline" label="Safety & Support" text={TEXT} />
         <MenuRow icon="notifications-outline" label="Notifications" text={TEXT} />
       </View>
@@ -145,9 +146,9 @@ function StatCard({ title, value, theme, text, sub }: any) {
   );
 }
 
-function MenuRow({ icon, label, text }: any) {
+function MenuRow({ icon, label, text, onPress }: any) {
   return (
-    <TouchableOpacity style={styles.menuRow} activeOpacity={0.8}>
+    <TouchableOpacity style={styles.menuRow} activeOpacity={0.8} onPress={onPress}>
       <View style={styles.iconPill}>
         <Ionicons name={icon} size={18} color="#34F5C5" />
       </View>

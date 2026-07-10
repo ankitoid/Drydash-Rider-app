@@ -8,6 +8,7 @@ import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import moment from "moment";
 import React, { useCallback, useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ActivityIndicator,
   Alert,
@@ -56,7 +57,10 @@ type Order = {
 export default function Dashboard() {
   const { theme } = useTheme();
   const { user } = useAuth();
+  console.log("user info---> ", user);
   const {
+    isTracking,
+    toggleTracking,
     lastLocation,
     error: locationError,
   } = useLocation();
@@ -71,6 +75,8 @@ export default function Dashboard() {
   );
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showTrackingGuide, setShowTrackingGuide] = useState(false);
+  const [isSavingGuide, setIsSavingGuide] = useState(false);
 
   const [fulfilledCount, setFulfilledCount] = useState<number>(0);
   const [deliveredCount, setDeliveredCount] = useState<number>(0);
@@ -82,6 +88,7 @@ export default function Dashboard() {
   const [isStartingTrip, setIsStartingTrip] = useState(false);
   const [isEndingTrip, setIsEndingTrip] = useState(false);
   const [isCompressing, setIsCompressing] = useState(false);
+  const [isTogglingTracking, setIsTogglingTracking] = useState(false);
 
   const restoreOpenTrip = useCallback(async () => {
     try {
@@ -240,7 +247,6 @@ export default function Dashboard() {
     }
 
     const res = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.4,
       cameraType: ImagePicker.CameraType.back,
       allowsEditing: false,
@@ -290,6 +296,9 @@ export default function Dashboard() {
         setShowTripModal(false);
         Alert.alert("Trip Started", "Your trip has been started successfully!");
         fetchKilometersData();
+        if (!isTracking) {
+          await toggleTracking();
+        }
       } else {
         Alert.alert("Error", json.message || "Failed to start trip");
       }
@@ -339,6 +348,9 @@ export default function Dashboard() {
         setEndImage(null);
         setShowTripModal(false);
         fetchKilometersData();
+        if (isTracking) {
+          await toggleTracking();
+        }
       } else {
         Alert.alert("Error", json.message || "Failed to end trip");
       }
@@ -356,8 +368,63 @@ export default function Dashboard() {
     );
   };
 
+  const handleToggleTracking = async () => {
+  try {
+    setIsTogglingTracking(true);
+    await toggleTracking();
+  } catch (error) {
+    console.warn("toggleTracking failed:", error);
+    Alert.alert(
+      "Tracking Error",
+      "We could not update location sharing right now. Please try again.",
+    );
+  } finally {
+    setIsTogglingTracking(false);
+  }
+};
+
   const openReturnToPlant = () => {
     router.push("/(rider)/order/return-to-plant" as any);
+  };
+
+  const trackingGuideKey = user?._id
+    ? `tracking_setup_seen_${user._id}`
+    : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkTrackingGuide = async () => {
+      if (!trackingGuideKey) return;
+
+      try {
+        const seen = await AsyncStorage.getItem(trackingGuideKey);
+        if (!cancelled && seen !== "true") {
+          setShowTrackingGuide(true);
+        }
+      } catch (err) {
+        console.warn("Failed to read tracking guide flag:", err);
+      }
+    };
+
+    checkTrackingGuide();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trackingGuideKey]);
+
+  const dismissTrackingGuide = async () => {
+    if (!trackingGuideKey) return;
+    try {
+      setIsSavingGuide(true);
+      await AsyncStorage.setItem(trackingGuideKey, "true");
+      setShowTrackingGuide(false);
+    } catch (err) {
+      console.warn("Failed to persist tracking guide flag:", err);
+    } finally {
+      setIsSavingGuide(false);
+    }
   };
 
   const renderLocationStatus = () => (
@@ -384,6 +451,41 @@ export default function Dashboard() {
         <Text style={styles.statusText}>TASK NAVIGATION</Text>
       </TouchableOpacity>
 
+      <TouchableOpacity
+        style={[
+          styles.trackingButton,
+          isTracking ? styles.trackingButtonStop : styles.trackingButtonStart,
+          isTogglingTracking && styles.trackingButtonDisabled,
+        ]}
+        onPress={handleToggleTracking}
+        activeOpacity={0.9}
+        disabled={isTogglingTracking}
+      >
+        {isTogglingTracking ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Ionicons
+            name={isTracking ? "stop-circle-outline" : "location-outline"}
+            size={18}
+            color="#fff"
+          />
+        )}
+        <Text style={styles.trackingButtonText}>
+          {isTracking ? "Stop Location Sharing" : "Start Location Sharing"}
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.setupLinkButton}
+        onPress={() => router.push("/(rider)/settings/location" as any)}
+        activeOpacity={0.8}
+      >
+        <Ionicons name="settings-outline" size={16} color={theme.primary} />
+        <Text style={[styles.setupLinkText, { color: theme.primary }]}>
+          Open Tracking Setup
+        </Text>
+      </TouchableOpacity>
+
       {lastLocation && (
         <Text style={[styles.lastUpdateText, { color: theme.subText }]}>
           Last update:{" "}
@@ -398,6 +500,87 @@ export default function Dashboard() {
         <Text style={styles.errorText}>⚠️ {locationError}</Text>
       )}
     </View>
+  );
+
+  const renderTrackingGuide = () => (
+    <Modal
+      visible={showTrackingGuide}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowTrackingGuide(false)}
+    >
+      <View style={styles.guideOverlay}>
+        <View style={[styles.guideCard, { backgroundColor: theme.card }]}>
+          <View style={styles.guideHeader}>
+            <View style={[styles.guideIcon, { backgroundColor: "#10B98118" }]}>
+              <Ionicons name="shield-checkmark" size={22} color="#10B981" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.guideTitle, { color: theme.text }]}>
+                Keep live tracking running
+              </Text>
+              <Text style={[styles.guideSub, { color: theme.subText }]}>
+                One-time phone setup for Android 13 and Vivo / iQOO.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.guideStepRow}>
+            <View style={styles.guideBullet} />
+            <Text style={[styles.guideStepText, { color: theme.subText }]}>
+              Open Tracking Setup from Profile and allow location "All the time".
+            </Text>
+          </View>
+          <View style={styles.guideStepRow}>
+            <View style={styles.guideBullet} />
+            <Text style={[styles.guideStepText, { color: theme.subText }]}>
+              Set battery for this app to Unrestricted / Don't optimize.
+            </Text>
+          </View>
+          <View style={styles.guideStepRow}>
+            <View style={styles.guideBullet} />
+            <Text style={[styles.guideStepText, { color: theme.subText }]}>
+              On Vivo / iQOO, also allow Auto-start or App launch if it appears.
+            </Text>
+          </View>
+          <View style={styles.guideStepRow}>
+            <View style={styles.guideBullet} />
+            <Text style={[styles.guideStepText, { color: theme.subText }]}>
+              Start sharing from Dashboard and keep the notification visible.
+            </Text>
+          </View>
+
+          <View style={styles.guideActions}>
+            <TouchableOpacity
+              style={[styles.guideAction, { borderColor: theme.border }]}
+              onPress={() => router.push("/(rider)/settings/location" as any)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="settings-outline" size={18} color={theme.text} />
+              <Text style={[styles.guideActionText, { color: theme.text }]}>
+                Open Setup
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.guidePrimary, { backgroundColor: "#10B981" }]}
+              onPress={dismissTrackingGuide}
+              activeOpacity={0.85}
+              disabled={isSavingGuide}
+            >
+              {isSavingGuide ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark" size={18} color="#fff" />
+                  <Text style={styles.guidePrimaryText}>Got it</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 
   const renderTripModal = () => (
@@ -825,6 +1008,7 @@ export default function Dashboard() {
         renderItem={null}
       />
 
+      {renderTrackingGuide()}
       {/* Trip Modal */}
       {renderTripModal()}
     </>
@@ -874,6 +1058,40 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 6,
   },
+  trackingButton: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  trackingButtonStart: {
+    backgroundColor: "#10B981",
+  },
+  trackingButtonStop: {
+    backgroundColor: "#EF4444",
+  },
+  trackingButtonDisabled: {
+    opacity: 0.7,
+  },
+  setupLinkButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+  },
+  setupLinkText: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  trackingButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
   statusIndicator: {
     width: 20,
     height: 20,
@@ -904,6 +1122,89 @@ const styles = StyleSheet.create({
     color: "#ef4444",
     fontWeight: "600",
     marginTop: 2,
+  },
+  guideOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "center",
+    padding: 16,
+  },
+  guideCard: {
+    borderRadius: 18,
+    padding: 18,
+  },
+  guideHeader: {
+    flexDirection: "row",
+    gap: 12,
+    alignItems: "flex-start",
+    marginBottom: 14,
+  },
+  guideIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  guideTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
+  guideSub: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  guideStepRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+    marginBottom: 10,
+  },
+  guideBullet: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 6,
+    backgroundColor: "#10B981",
+  },
+  guideStepText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  guideActions: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+  },
+  guideAction: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  guideActionText: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  guidePrimary: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 8,
+  },
+  guidePrimaryText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "800",
   },
 
   // KPI Cards

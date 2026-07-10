@@ -67,6 +67,35 @@ const GOOGLE_DIRECTIONS_KEY =
 const ENABLE_GOOGLE_ROUTES = Constants.expoConfig?.extra?.enableGoogleRoutes === true;
 const API_BASE = "https://api.shiptos.com/api/v1";
 
+/**
+ * Build the taskTracking JSON the native Android foreground service should
+ * include in its HTTP POST, and push it to the native module. This ensures
+ * the background (native) location uploads carry the same per-task tracking
+ * info the Expo fallback / socket path already sends.
+ */
+const syncNativeTrackingExtras = (leg: {
+  id: string;
+  taskId: string;
+  type: TrackingLegType;
+  totalDistanceKm: number;
+  destination?: TrackingCoordinate | null;
+} | null) => {
+  if (!leg) {
+    // Clear extras when no active leg
+    locationService.updateNativeTrackingExtras(null).catch(() => {});
+    return;
+  }
+  const extras = JSON.stringify({
+    trackingLegId: leg.id,
+    taskId: leg.taskId,
+    taskType: leg.type,
+    totalDistanceKm: leg.totalDistanceKm,
+    distanceFromPreviousKm: 0,
+    destination: leg.destination ?? null,
+  });
+  locationService.updateNativeTrackingExtras(extras).catch(() => {});
+};
+
 const OFF_ROUTE_THRESHOLD_METERS = 250;
 const REROUTE_COOLDOWN_MS = 120000;
 
@@ -542,6 +571,8 @@ export const TaskNavigationMap = ({
       if (leg?.taskId === taskId) {
         setActive(true);
         setDistanceKm(leg.totalDistanceKm);
+        // Keep native service in sync with latest distance
+        syncNativeTrackingExtras(leg);
       }
     };
     syncActiveLeg();
@@ -560,6 +591,8 @@ export const TaskNavigationMap = ({
         currentLocation ?? undefined,
       );
       await locationService.stopTracking();
+      // Clear native extras for the leg we just completed
+      syncNativeTrackingExtras(null);
       socket.emit("taskNavigationEnded", {
         riderId: rider._id,
         trackingLegId: completed?.id,
@@ -602,6 +635,8 @@ export const TaskNavigationMap = ({
         startLocation: currentLocation,
       });
       await locationService.startTracking();
+      // Push new leg extras to the native foreground service
+      syncNativeTrackingExtras(leg);
       await fetchRoute(currentLocation, "initial");
       focusOnRider(currentLocation);
       socket.emit("taskNavigationStarted", {
@@ -663,6 +698,8 @@ export const TaskNavigationMap = ({
 
         await locationService.setCachedUser(rider);
         await locationService.startTracking();
+        // Resume: push existing leg extras to native service
+        syncNativeTrackingExtras(existingLeg);
         await fetchRoute(currentLocation, "initial");
         setActive(true);
         setDistanceKm(existingLeg.totalDistanceKm);
@@ -687,6 +724,8 @@ export const TaskNavigationMap = ({
         startLocation: currentLocation,
       });
       await locationService.startTracking();
+      // Push new leg extras to the native foreground service
+      syncNativeTrackingExtras(leg);
       await fetchRoute(currentLocation, "initial");
       focusOnRider(currentLocation);
       socket.emit("taskNavigationStarted", {
@@ -723,6 +762,8 @@ export const TaskNavigationMap = ({
           currentLocation ?? undefined,
         );
         await locationService.stopTracking();
+        // Clear native extras for the leg we just completed
+        syncNativeTrackingExtras(null);
         socket.emit("taskNavigationEnded", {
           riderId: rider?._id,
           trackingLegId: completed?.id,
