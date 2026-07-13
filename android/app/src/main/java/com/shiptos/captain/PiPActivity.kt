@@ -219,9 +219,13 @@ class PiPActivity : AppCompatActivity() {
 
         // Start timer
         uiHandler.post(timerRunnable)
+    }
 
-        // Enter PiP immediately
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+    override fun onResume() {
+        super.onResume()
+        // Enter PiP immediately on resume — the window is guaranteed to be
+        // ready and attached at this point (unlike onCreate where it can fail silently).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !isInPiP) {
             enterPiPMode()
         }
     }

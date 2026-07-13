@@ -1,8 +1,12 @@
 package com.shiptos.captain
 import expo.modules.splashscreen.SplashScreenManager
 
+import android.app.PictureInPictureParams
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.util.Rational
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -12,81 +16,131 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 import expo.modules.ReactActivityDelegateWrapper
 
 class MainActivity : ReactActivity() {
-  override fun onCreate(savedInstanceState: Bundle?) {
-    // Set the theme to AppTheme BEFORE onCreate to support
-    // coloring the background, status bar, and navigation bar.
-    // This is required for expo-splash-screen.
-    // setTheme(R.style.AppTheme);
-    // @generated begin expo-splashscreen - expo prebuild (DO NOT MODIFY) sync-f3ff59a738c56c9a6119210cb55f0b613eb8b6af
-    SplashScreenManager.registerOnActivity(this)
-    // @generated end expo-splashscreen
-    super.onCreate(null)
-  }
 
-  /**
-   * Returns the name of the main component registered from JavaScript. This is used to schedule
-   * rendering of the component.
-   */
-  override fun getMainComponentName(): String = "main"
+    companion object {
+        private const val TAG = "MainActivity"
 
-  /**
-   * Returns the instance of the [ReactActivityDelegate]. We use [DefaultReactActivityDelegate]
-   * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
-   */
-  override fun createReactActivityDelegate(): ReactActivityDelegate {
-    return ReactActivityDelegateWrapper(
-          this,
-          BuildConfig.IS_NEW_ARCHITECTURE_ENABLED,
-          object : DefaultReactActivityDelegate(
-              this,
-              mainComponentName,
-              fabricEnabled
-          ){})
-  }
+        /**
+         * Held so LocationService can call updatePiPParams() when tracking
+         * starts/stops — enabling Android 12+ auto-enter.
+         */
+        var instance: MainActivity? = null
+            private set
+    }
 
-  /**
-    * Align the back button behavior with Android S
-    * where moving root activities to background instead of finishing activities.
-    * @see <a href="https://developer.android.com/reference/android/app/Activity#onBackPressed()">onBackPressed</a>
-    */
-  override fun invokeDefaultOnBackPressed() {
-      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
-          if (!moveTaskToBack(false)) {
-              // For non-root activities, use the default implementation to finish them.
-              super.invokeDefaultOnBackPressed()
-          }
-          return
-      }
+    // ─────────────────────────────────────────────────────────────────────────
+    // Lifecycle
+    // ─────────────────────────────────────────────────────────────────────────
 
-      // Use the default back button implementation on Android S
-      // because it's doing more than [Activity.moveTaskToBack] in fact.
-      super.invokeDefaultOnBackPressed()
-  }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        SplashScreenManager.registerOnActivity(this)
+        super.onCreate(null)
+        instance = this
+        // Initialise PiP params with autoEnterEnabled=false (tracking not yet started)
+        updatePiPParams(trackingActive = false)
+    }
 
-  /**
-   * Called when the user presses Home or navigates away from the app.
-   * The Activity is still in the foreground at this point, so startActivity()
-   * is ALWAYS permitted — even on Android 10+ release builds.
-   *
-   * We launch PiPActivity here rather than from a Service or ReactModule to
-   * bypass Android 10+ restrictions that block background activity launches.
-   */
-  override fun onUserLeaveHint() {
-      super.onUserLeaveHint()
-      val shouldShowPip = LocationService.isRunning || LocationService.pipRequested
-      if (shouldShowPip) {
-          LocationService.pipRequested = false // consume the flag
-          try {
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                  val intent = android.content.Intent(this, PiPActivity::class.java).apply {
-                      flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or
-                              android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP
-                  }
-                  startActivity(intent)
-              }
-          } catch (e: Exception) {
-              e.printStackTrace()
-          }
-      }
-  }
+    override fun onDestroy() {
+        super.onDestroy()
+        if (instance == this) instance = null
+    }
+
+    override fun getMainComponentName(): String = "main"
+
+    override fun createReactActivityDelegate(): ReactActivityDelegate {
+        return ReactActivityDelegateWrapper(
+            this,
+            BuildConfig.IS_NEW_ARCHITECTURE_ENABLED,
+            object : DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled) {}
+        )
+    }
+
+    override fun invokeDefaultOnBackPressed() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+            if (!moveTaskToBack(false)) {
+                super.invokeDefaultOnBackPressed()
+            }
+            return
+        }
+        super.invokeDefaultOnBackPressed()
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PiP helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Update the PiP parameters registered with the system.
+     *
+     * On Android 12+ (API 31+) setting autoEnterEnabled=true means the OS will
+     * automatically slide the activity into a PiP window whenever the user
+     * navigates away — no explicit enterPictureInPictureMode() call needed.
+     *
+     * Called from LocationService when tracking starts/stops.
+     */
+    fun updatePiPParams(trackingActive: Boolean) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        try {
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(3, 4))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                builder.setAutoEnterEnabled(trackingActive)
+            }
+            setPictureInPictureParams(builder.build())
+            Log.d(TAG, "✅ PiP params updated: trackingActive=$trackingActive autoEnterEnabled=${Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && trackingActive}")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Failed to update PiP params", e)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ── PRIMARY PiP TRIGGER ──────────────────────────────────────────────────
+    //
+    // onUserLeaveHint() fires when the user explicitly leaves the app
+    // (Home button press, or the system decides to put the app in the background).
+    // At this EXACT moment the Activity window is still ACTIVE and ATTACHED —
+    // enterPictureInPictureMode() is guaranteed to succeed.
+    //
+    // WHY NOT onStop():
+    //   onStop() fires AFTER the window has already started transitioning away.
+    //   The system has committed to stopping the window, so PiP entry is
+    //   SILENTLY REJECTED in release/production builds (though it may work in
+    //   debug because of extra developer-tool permissions).
+    //
+    // For Android 12+ (API 31+): autoEnterEnabled=true (set in updatePiPParams)
+    //   handles entry automatically — no explicit call needed here.
+    // For Android 8–11 (API 26–30): we call enterPictureInPictureMode() here.
+    // ─────────────────────────────────────────────────────────────────────────
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        LocationService.pipRequested = false // consume any pending flag
+
+        if (!LocationService.isRunning) return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                // API 26–30: enter PiP manually here (autoEnterEnabled not available)
+                val params = PictureInPictureParams.Builder()
+                    .setAspectRatio(Rational(3, 4))
+                    .build()
+                val entered = enterPictureInPictureMode(params)
+                Log.d(TAG, if (entered) "✅ PiP entered (API<31)" else "⚠️ PiP enter returned false (API<31)")
+            }
+            // API 31+: autoEnterEnabled=true already registered — OS handles it automatically
+
+            // Also launch PiPActivity so it appears on the lock screen.
+            // PiPActivity sets FLAG_SHOW_WHEN_LOCKED so the card is visible
+            // above the keyguard when the device is locked.
+            if (PiPActivity.instance == null) {
+                val intent = Intent(this, PiPActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                }
+                startActivity(intent)
+                Log.d(TAG, "✅ PiPActivity launched for lock-screen overlay")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ PiP trigger failed in onUserLeaveHint", e)
+        }
+    }
 }

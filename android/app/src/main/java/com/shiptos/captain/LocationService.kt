@@ -691,6 +691,16 @@ class LocationService : Service() {
         }
         nativeSocket?.connect()
 
+        // Tell MainActivity to enable PiP auto-enter (Android 12+) now that
+        // tracking is live. On Android 8–11 this is a no-op (manual trigger in onUserLeaveHint).
+        try {
+            MainActivity.instance?.runOnUiThread {
+                MainActivity.instance?.updatePiPParams(trackingActive = true)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ Could not update PiP params on start", e)
+        }
+
         Log.e(TAG, "✅ Location updates requested + self-heal alarm scheduled + native socket connecting")
         return START_STICKY
     }
@@ -829,6 +839,15 @@ class LocationService : Service() {
         locationPendingIntent = null
         nativeSocket?.disconnect()
         nativeSocket = null
+
+        // Disable PiP auto-enter now that tracking is stopped
+        try {
+            MainActivity.instance?.runOnUiThread {
+                MainActivity.instance?.updatePiPParams(trackingActive = false)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ Could not update PiP params on stop", e)
+        }
 
         // Broadcast TRACKING_STOPPED so PiPActivity finishes itself
         try {
