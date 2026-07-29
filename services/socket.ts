@@ -19,6 +19,8 @@ export const socket = io(SOCKET_URL, {
   pingTimeout: 20000,
 });
 
+console.log("this is the socket-->>>", socket);
+
 socket.onAnyOutgoing((event, ...args) => {
 });
 

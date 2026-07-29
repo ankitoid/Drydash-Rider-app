@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
   createContext,
   useContext,
@@ -5,10 +6,10 @@ import React, {
   useMemo,
   useState,
 } from "react";
-import { Appearance, ColorSchemeName } from "react-native";
 import { DarkTheme, LightTheme } from "../constants/colors";
 
-type ThemeType = typeof DarkTheme;
+type ThemeType = typeof LightTheme;
+const THEME_STORAGE_KEY = "@user_theme_choice";
 
 interface ThemeContextProps {
   theme: ThemeType;
@@ -25,36 +26,45 @@ export const ThemeProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
-  const [scheme, setScheme] = useState<ColorSchemeName>(
-    Appearance.getColorScheme()
-  );
+  // Bright/Light theme is the default theme (isDark = false)
+  const [isDark, setIsDark] = useState<boolean>(false);
 
-  // 🔒 MEMOIZE derived values
-  const isDark = useMemo(
-    () => scheme !== "light",
-    [scheme]
-  );
+  // Load saved user theme preference on app startup
+  useEffect(() => {
+    const loadSavedTheme = async () => {
+      try {
+        const savedTheme = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        if (savedTheme === "dark") {
+          setIsDark(true);
+        } else if (savedTheme === "light") {
+          setIsDark(false);
+        }
+      } catch (error) {
+        console.warn("Failed to load saved theme preference", error);
+      }
+    };
+    loadSavedTheme();
+  }, []);
+
+  // Toggle between bright (light) and dark theme, persisting choice
+  const toggleTheme = async () => {
+    try {
+      const nextIsDark = !isDark;
+      setIsDark(nextIsDark);
+      await AsyncStorage.setItem(
+        THEME_STORAGE_KEY,
+        nextIsDark ? "dark" : "light"
+      );
+    } catch (error) {
+      console.warn("Failed to save theme preference", error);
+    }
+  };
 
   const theme = useMemo(
     () => (isDark ? DarkTheme : LightTheme),
     [isDark]
   );
 
-  useEffect(() => {
-    const subscription = Appearance.addChangeListener(
-      ({ colorScheme }) => {
-        setScheme(colorScheme);
-      }
-    );
-
-    return () => subscription.remove();
-  }, []);
-
-  const toggleTheme = () => {
-    setScheme((prev) => (prev === "light" ? "dark" : "light"));
-  };
-
-  // 🔥 MOST IMPORTANT FIX
   const value = useMemo(
     () => ({
       theme,

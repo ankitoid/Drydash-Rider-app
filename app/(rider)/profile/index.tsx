@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import React from "react";
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,47 +13,40 @@ import {
 import { useTheme } from "../../../context/ThemeContext";
 
 export default function RiderProfile() {
-  const { theme, isDark, toggleTheme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user, logout } = useAuth();
 
-  const TEXT = isDark ? "#FFFFFF" : theme.text;
-  const SUBTEXT = isDark ? "#CBD5E1" : theme.subText;
-
-  // ✅ LOGOUT HANDLER
   const handleLogout = async () => {
-    try {
-      await logout();
-      router.replace("/(auth)/rider-login"); // 🔒 Reset navigation stack
-    } catch (error) {
-      console.log("Logout error:", error);
-    }
+    Alert.alert("Logout", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Logout",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await logout();
+            router.replace("/(auth)/rider-login");
+          } catch (error) {
+            console.log("Logout error:", error);
+          }
+        },
+      },
+    ]);
   };
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.background }}
-      contentContainerStyle={{ paddingBottom: 140 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 60 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* BACK HEADER */}
-      <View style={styles.backHeader}>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => router.back()}
-          style={styles.backBtn}
-        >
-          <Ionicons name="chevron-back" size={22} color={TEXT} />
-          <Text style={[styles.backText, { color: TEXT }]}>Back</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* PROFILE CARD */}
+      {/* PROFILE HEADER CARD */}
       <View
         style={[
           styles.profileCard,
           {
             backgroundColor: theme.card,
-            borderColor: isDark ? "#1F2937" : "transparent",
+            borderColor: theme.border,
           },
         ]}
       >
@@ -60,219 +54,224 @@ export default function RiderProfile() {
           style={[
             styles.avatarLarge,
             {
-              backgroundColor: theme.primarySoft,
-              shadowColor: theme.primary,
+              backgroundColor: theme.primary,
             },
           ]}
         >
-          <Text style={[styles.avatarText, { color: theme.primary }]}>
-            {user?.name?.slice(0, 1)}
+          <Text style={styles.avatarText}>
+            {(user?.name || "R")?.slice(0, 1).toUpperCase()}
           </Text>
         </View>
 
-        <Text style={[styles.name, { color: TEXT }]}>{user?.name}</Text>
+        <Text style={[styles.name, { color: theme.text }]}>{user?.name || "Rider User"}</Text>
+        <Text style={[styles.phone, { color: theme.subText }]}>{user?.phone || "+91 9876543210"}</Text>
 
-        <Text style={[styles.phone, { color: SUBTEXT }]}>
-          {user?.phone}
-        </Text>
-
-        <View style={styles.ratingRow}>
-          <Ionicons name="star" size={16} color="#FACC15" />
-          <Text style={[styles.rating, { color: TEXT }]}>4.8 Rating</Text>
+        <View style={[styles.plantBadge, { backgroundColor: theme.primarySoft }]}>
+          <Ionicons name="location-outline" size={14} color={theme.primary} />
+          <Text style={[styles.plantText, { color: theme.primary }]}>
+            Assigned Plant: {user?.plantName || "Delhi Central"}
+          </Text>
         </View>
       </View>
 
-      {/* STATS */}
+      {/* RIDER PERFORMANCE STATS */}
       <View style={styles.statsRow}>
-        <StatCard title="Orders" value="1,247" theme={theme} text={TEXT} sub={SUBTEXT} />
-        <StatCard title="Delivered" value="1,128" theme={theme} text={TEXT} sub={SUBTEXT} />
-        <StatCard title="Earnings" value="₹18,250" theme={theme} text={TEXT} sub={SUBTEXT} />
+        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.statValue, { color: theme.text }]}>1,247</Text>
+          <Text style={[styles.statLabel, { color: theme.subText }]}>Total Orders</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.statValue, { color: theme.text }]}>98.5%</Text>
+          <Text style={[styles.statLabel, { color: theme.subText }]}>On-Time Delivery</Text>
+        </View>
+
+        <View style={[styles.statCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Text style={[styles.statValue, { color: theme.text }]}>4.9 ★</Text>
+          <Text style={[styles.statLabel, { color: theme.subText }]}>Rider Rating</Text>
+        </View>
       </View>
 
-      {/* MENU */}
-      <View style={[styles.menuCard, { backgroundColor: theme.card }]}>
-        <MenuRow icon="person-outline" label="Edit Profile" text={TEXT} />
-        <MenuRow icon="document-text-outline" label="Documents" text={TEXT} />
-        <MenuRow icon="wallet-outline" label="Bank & Payouts" text={TEXT} />
-        <MenuRow icon="location-outline" label="Tracking Setup" text={TEXT} onPress={() => router.push("/(rider)/settings/location")} />
-        <MenuRow icon="shield-checkmark-outline" label="Safety & Support" text={TEXT} />
-        <MenuRow icon="notifications-outline" label="Notifications" text={TEXT} />
-      </View>
-
-      {/* THEME SWITCH */}
-      <View style={[styles.menuCard, { backgroundColor: theme.card }]}>
+      {/* QUICK ACTIONS MENU */}
+      <View style={[styles.menuCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
         <TouchableOpacity
           style={styles.menuRow}
-          activeOpacity={0.8}
-          onPress={toggleTheme}
+          onPress={() => router.push("/(rider)/wallet")}
         >
-          <View style={[styles.iconPill, { backgroundColor: theme.primarySoft }]}>
-            <Ionicons
-              name={isDark ? "sunny-outline" : "moon-outline"}
-              size={18}
-              color={theme.primary}
-            />
+          <View style={styles.menuLeft}>
+            <View style={[styles.iconBg, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="wallet-outline" size={20} color={theme.primary} />
+            </View>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>Wallet & Payouts</Text>
           </View>
-          <Text style={[styles.menuText, { color: TEXT }]}>
-            {isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
-          </Text>
+          <Ionicons name="chevron-forward" size={18} color={theme.subText} />
+        </TouchableOpacity>
+
+        <View style={styles.menuDivider} />
+
+        <TouchableOpacity
+          style={styles.menuRow}
+          onPress={() => router.push("/(rider)/notifications")}
+        >
+          <View style={styles.menuLeft}>
+            <View style={[styles.iconBg, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="notifications-outline" size={20} color={theme.primary} />
+            </View>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>Notifications</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.subText} />
+        </TouchableOpacity>
+
+        <View style={styles.menuDivider} />
+
+        <TouchableOpacity
+          style={styles.menuRow}
+          onPress={() => router.push("/(rider)/settings/index" as any)}
+        >
+          <View style={styles.menuLeft}>
+            <View style={[styles.iconBg, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="settings-outline" size={20} color={theme.primary} />
+            </View>
+            <Text style={[styles.menuLabel, { color: theme.text }]}>App Settings</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={theme.subText} />
         </TouchableOpacity>
       </View>
 
-      {/* LOGOUT */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={handleLogout}
-        style={[
-          styles.logoutBtn,
-          { backgroundColor: isDark ? "#3B1F1F" : "#FEE2E2" },
-        ]}
-      >
-        <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-        <Text style={styles.logoutText}>Log Out</Text>
+      {/* LOGOUT BUTTON */}
+      <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+        <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+        <Text style={styles.logoutText}>Log Out Account</Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
-/* ---------- SMALL COMPONENTS ---------- */
-
-function StatCard({ title, value, theme, text, sub }: any) {
-  return (
-    <View style={[styles.statCard, { backgroundColor: theme.card }]}>
-      <Text style={[styles.statValue, { color: text }]}>{value}</Text>
-      <Text style={[styles.statTitle, { color: sub }]}>{title}</Text>
-    </View>
-  );
-}
-
-function MenuRow({ icon, label, text, onPress }: any) {
-  return (
-    <TouchableOpacity style={styles.menuRow} activeOpacity={0.8} onPress={onPress}>
-      <View style={styles.iconPill}>
-        <Ionicons name={icon} size={18} color="#34F5C5" />
-      </View>
-      <Text style={[styles.menuText, { color: text }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-    </TouchableOpacity>
-  );
-}
-
-/* ---------- STYLES ---------- */
-
 const styles = StyleSheet.create({
-  backHeader: {
-    paddingHorizontal: 16,
-    marginTop: 44,
-    marginBottom: 6,
-  },
-  backBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    width: 90,
-  },
-  backText: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
   profileCard: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    padding: 18,
-    borderRadius: 22,
-    alignItems: "center",
+    padding: 24,
+    borderRadius: 20,
     borderWidth: 1,
+    alignItems: "center",
+    marginBottom: 16,
   },
+
   avatarLarge: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 12,
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
   },
+
   avatarText: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
+    color: "#FFFFFF",
   },
+
   name: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "900",
   },
+
   phone: {
-    fontSize: 13,
-    marginTop: 4,
+    fontSize: 14,
+    marginTop: 2,
   },
-  ratingRow: {
+
+  plantBadge: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8,
     gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginTop: 12,
   },
-  rating: {
-    fontWeight: "800",
+
+  plantText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
+
   statsRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginHorizontal: 16,
-    marginVertical: 16,
+    gap: 10,
+    marginBottom: 16,
   },
+
   statCard: {
-    width: "31%",
+    flex: 1,
     padding: 14,
     borderRadius: 16,
+    borderWidth: 1,
     alignItems: "center",
   },
+
   statValue: {
     fontSize: 16,
     fontWeight: "900",
   },
-  statTitle: {
-    fontSize: 12,
+
+  statLabel: {
+    fontSize: 10,
     marginTop: 4,
+    textAlign: "center",
   },
+
   menuCard: {
-    marginHorizontal: 16,
-    borderRadius: 18,
-    marginBottom: 14,
-    overflow: "hidden",
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 24,
   },
+
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    height: 56,
+    justifyContent: "space-between",
+    padding: 16,
+  },
+
+  menuLeft: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
   },
-  iconPill: {
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+
+  iconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#0F172A",
   },
-  menuText: {
-    flex: 1,
-    fontSize: 14,
+
+  menuLabel: {
+    fontSize: 15,
     fontWeight: "700",
   },
-  logoutBtn: {
+
+  menuDivider: {
+    height: 1,
+    backgroundColor: "#EBE2E2",
     marginHorizontal: 16,
-    marginTop: 10,
-    height: 52,
-    borderRadius: 16,
+  },
+
+  logoutBtn: {
+    backgroundColor: "#EB3B2F",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
-    gap: 10,
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 16,
   },
+
   logoutText: {
-    fontWeight: "900",
-    color: "#EF4444",
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
   },
 });
