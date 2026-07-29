@@ -1,7 +1,9 @@
 "use client";
 
 import UniversalLoader from "@/components/Loader/UniversalLoader";
+import ConfirmModal from "@/components/Modals/ConfirmModal";
 import { useAuth } from "@/context/useAuth";
+import { openMapsNavigation } from "@/utils/navigationHelper";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker, {
   DateTimePickerAndroid,
@@ -11,7 +13,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as ImageManipulator from "expo-image-manipulator";
 import { SaveFormat } from "expo-image-manipulator";
 import * as Location from "expo-location";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import moment from "moment";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -32,12 +34,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../../../../context/ThemeContext";
 
 const API_URL = "https://api.shiptos.com/api/v1";
-const PAGE_LIMIT = 20;
+const PAGE_LIMIT = 100;
 
 const SERVICE_OPTIONS = [
   { slug: "laundry", label: "Laundry", icon: "shirt-outline" },
   { slug: "shoespa", label: "Shoe Spa", icon: "walk-outline" },
   { slug: "dryclean", label: "Dry Clean", icon: "water-outline" },
+  {slug: "leather", label: "Leather Items", icon: "leather-outline"}
 ] as const;
 
 type ServiceSlug = (typeof SERVICE_OPTIONS)[number]["slug"];
@@ -47,6 +50,12 @@ type PickupData = {
   Address?: string;
   Contact?: string;
   plantName?: string;
+  status?: string;
+  completed?: boolean;
+  pickupLocation?: {
+    latitude?: number;
+    longitude?: number;
+  };
   deliveryLocation?: {
     latitude?: number;
     longitude?: number;
@@ -111,15 +120,31 @@ type Props = {
   initialType?: string;
 };
 
+import { useRiderData } from "@/context/RiderDataContext";
+
 export default function PickupWorkflowScreen({
-  orderId,
+  orderId: propOrderId,
   initialType = "laundry",
-}: Props) {
+}: Partial<Props>) {
+  const routeParams = useLocalSearchParams<{ orderId?: string }>();
+  const orderId = propOrderId || routeParams?.orderId || "";
   const { theme, isDark } = useTheme();
+  const { activeTrip } = useRiderData();
   const insets = useSafeAreaInsets();
+
+  const matchedStop = activeTrip?.stops?.find(
+    (s) => String(s.id) === String(orderId) || String((s as any)._id) === String(orderId)
+  );
 
   const [pickup, setPickup] = useState<PickupData | null>(null);
   const [pickupLoading, setPickupLoading] = useState(true);
+
+  const isPickupCompleted =
+    matchedStop?.status === "completed" ||
+    matchedStop?.completed === true ||
+    pickup?.status === "completed" ||
+    pickup?.status === "delivered" ||
+    pickup?.completed === true;
   const [servicesBySlug, setServicesBySlug] = useState<
     Record<string, ServiceState>
   >({});
@@ -155,6 +180,8 @@ export default function PickupWorkflowScreen({
 
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [pendingRescheduleDate, setPendingRescheduleDate] = useState<Date | null>(null);
+  const [rescheduleConfirmModalVisible, setRescheduleConfirmModalVisible] = useState(false);
   const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -200,6 +227,11 @@ export default function PickupWorkflowScreen({
   const totalItems = capturedItems.length;
 
   const fetchPickupById = useCallback(async () => {
+    if (!orderId) {
+      setPickupLoading(false);
+      return;
+    }
+
     setPickupLoading(true);
     try {
       const res = await fetch(`${API_URL}/pickupbyId/${orderId}`, {
@@ -210,7 +242,9 @@ export default function PickupWorkflowScreen({
         },
       });
 
+
       const json = await res.json().catch(() => null);
+      console.log("this is the dataa------>>>>>>>>>>",json)
       if (!res.ok) {
         throw new Error(
           json?.message || `Failed to load pickup (${res.status})`,
@@ -218,6 +252,8 @@ export default function PickupWorkflowScreen({
       }
 
       const pickupData = json?.data ?? null;
+
+      console.log('this is the pickupData==>',pickupData)
       setPickup(pickupData);
 
       if (
@@ -230,7 +266,7 @@ export default function PickupWorkflowScreen({
         });
       }
     } catch (error: any) {
-      Alert.alert("Error", error?.message || "Failed to load pickup");
+      console.warn("Pickup load error:", error?.message || "Failed to load pickup");
       setPickup(null);
     } finally {
       setPickupLoading(false);
@@ -406,7 +442,8 @@ export default function PickupWorkflowScreen({
         onChange: (_event, date) => {
           if (date) {
             setSelectedDate(date);
-            reschedulePickup(date);
+            setPendingRescheduleDate(date);
+            setRescheduleConfirmModalVisible(true);
           }
         },
       });
@@ -444,7 +481,7 @@ export default function PickupWorkflowScreen({
         [{ text: "OK", onPress: () => router.back() }],
       );
     } catch (error: any) {
-      Alert.alert("Error", error?.message || "Failed to reschedule pickup");
+      Alert.alert("Error2", error?.message || "Failed to reschedule pickup");
     } finally {
       setRescheduleSubmitting(false);
       setShowDatePicker(false);
@@ -492,7 +529,7 @@ export default function PickupWorkflowScreen({
       if (uri) setCancelRecordedUri(uri);
     } catch (error) {
       console.error("Stop recording error:", error);
-      Alert.alert("Error", "Failed to stop recording");
+      Alert.alert("Error3", "Failed to stop recording");
     } finally {
       setCancelRecording(null);
     }
@@ -571,11 +608,11 @@ export default function PickupWorkflowScreen({
 
   const cancelPickup = async (note: string, voiceUri: string | null) => {
     if (!orderId) {
-      Alert.alert("Error", "Missing order id");
+      Alert.alert("Error4", "Missing order id");
       return;
     }
     if (!user?.name || !user?.role) {
-      Alert.alert("Error", "User information missing. Please log in again.");
+      Alert.alert("Error5", "User information missing. Please log in again.");
       return;
     }
 
@@ -649,7 +686,7 @@ export default function PickupWorkflowScreen({
           "Request timed out. Please check your connection.",
         );
       } else {
-        Alert.alert("Error", err?.message || "Failed to cancel pickup");
+        Alert.alert("Error6", err?.message || "Failed to cancel pickup");
       }
     } finally {
       setCancelSubmitting(false);
@@ -684,7 +721,7 @@ export default function PickupWorkflowScreen({
       setDraftPhotos((prev) => [...prev, manipulated.uri]);
     } catch (error) {
       console.error("Photo capture failed", error);
-      Alert.alert("Error", "Failed to capture image");
+      Alert.alert("Error7", "Failed to capture image");
     } finally {
       setIsCompressingPhoto(false);
     }
@@ -936,14 +973,14 @@ export default function PickupWorkflowScreen({
             text: "OK",
             onPress: () =>
               router.replace({
-                pathname: "/(rider)/(tabs)/pickup",
+                pathname: "/(rider)/(tabs)/tasks",
                 params: { completedOrderId: orderId },
               }),
           },
         ],
       );
     } catch (error: any) {
-      Alert.alert("Error", error?.message || "Upload failed");
+      Alert.alert("Error122", error?.message || "Upload failed");
     } finally {
       setSubmitting(false);
     }
@@ -995,6 +1032,31 @@ export default function PickupWorkflowScreen({
         </View>
 
         <View style={{ padding: 16, gap: 16 }}>
+          {isPickupCompleted && (
+            <View
+              style={{
+                backgroundColor: "#DCFCE7",
+                borderColor: "#86EFAC",
+                borderWidth: 1,
+                borderRadius: 16,
+                padding: 14,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <Ionicons name="checkmark-circle" size={24} color="#166534" />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: "#166534", fontSize: 14, fontWeight: "800" }}>
+                  Pickup Completed ✓
+                </Text>
+                <Text style={{ color: "#15803D", fontSize: 12, marginTop: 2 }}>
+                  This pickup has been processed. Items and details are viewable in read-only mode.
+                </Text>
+              </View>
+            </View>
+          )}
+
           <View
             style={[
               styles.orderCard,
@@ -1005,35 +1067,102 @@ export default function PickupWorkflowScreen({
               {pickup?.Name || "Pickup details"}
             </Text>
 
-            <View style={styles.actionRow}>
-              <ActionButton
-                icon="call-outline"
-                label="Call"
-                onPress={handleCall}
-                color={theme.primary}
-                disabled={!pickup?.Contact}
-              />
-              <ActionButton
-                icon="logo-whatsapp"
-                label="WhatsApp"
-                onPress={handleWhatsApp}
-                color={theme.primaryDark}
-                disabled={!pickup?.Contact}
-              />
-              <ActionButton
-                icon="calendar-outline"
-                label="Reschedule"
-                onPress={openReschedulePicker}
-                color={theme.warning}
-                disabled={rescheduleSubmitting}
-              />
-              <ActionButton
-                icon="close-outline"
-                label="Cancel"
-                onPress={handleCancelPress}
-                color={theme.danger}
-                disabled={cancelSubmitting}
-              />
+            <View style={styles.actionGrid}>
+              {/* ROW 1: Quick Communication & Navigation */}
+              <View style={styles.actionRowPrimary}>
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { backgroundColor: theme.primarySoft }]}
+                  onPress={handleCall}
+                  disabled={!pickup?.Contact}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="call-outline" size={18} color={theme.primary} />
+                  <Text style={[styles.primaryActionText, { color: theme.primary }]}>Call</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { backgroundColor: "#DCFCE7" }]}
+                  onPress={handleWhatsApp}
+                  disabled={!pickup?.Contact}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="logo-whatsapp" size={18} color="#166534" />
+                  <Text style={[styles.primaryActionText, { color: "#166534" }]}>WhatsApp</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.primaryActionBtn, { backgroundColor: "#DBEAFE" }]}
+                  onPress={() =>
+                    openMapsNavigation(
+                      pickup?.pickupLocation?.latitude || pickup?.deliveryLocation?.latitude || locationCoords?.latitude,
+                      pickup?.pickupLocation?.longitude || pickup?.deliveryLocation?.longitude || locationCoords?.longitude,
+                      pickup?.Address,
+                      pickup?.Name,
+                    )
+                  }
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="navigate-outline" size={18} color="#1E40AF" />
+                  <Text style={[styles.primaryActionText, { color: "#1E40AF" }]}>Navigate</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* ROW 2: Task Status Actions */}
+              <View style={styles.actionRowSecondary}>
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryActionBtn,
+                    {
+                      backgroundColor: isPickupCompleted ? (isDark ? "#1E293B" : "#F1F5F9") : (isDark ? "#332900" : "#FEF3C7"),
+                      borderColor: isPickupCompleted ? theme.border : (isDark ? "#78350F" : "#FDE68A"),
+                    },
+                  ]}
+                  onPress={openReschedulePicker}
+                  disabled={isPickupCompleted || rescheduleSubmitting}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="calendar-outline"
+                    size={16}
+                    color={isPickupCompleted ? theme.subText : (isDark ? "#FBBF24" : "#B45309")}
+                  />
+                  <Text
+                    style={[
+                      styles.secondaryActionText,
+                      { color: isPickupCompleted ? theme.subText : (isDark ? "#FBBF24" : "#B45309") },
+                    ]}
+                  >
+                    Reschedule
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.secondaryActionBtn,
+                    {
+                      backgroundColor: isPickupCompleted ? (isDark ? "#1E293B" : "#F1F5F9") : (isDark ? "#3B0707" : "#FEE2E2"),
+                      borderColor: isPickupCompleted ? theme.border : (isDark ? "#991B1B" : "#FCA5A5"),
+                    },
+                  ]}
+                  onPress={handleCancelPress}
+                  disabled={isPickupCompleted || cancelSubmitting}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="close-outline"
+                    size={16}
+                    color={isPickupCompleted ? theme.subText : (isDark ? "#F87171" : "#991B1B")}
+                  />
+                  <Text
+                    style={[
+                      styles.secondaryActionText,
+                      { color: isPickupCompleted ? theme.subText : (isDark ? "#F87171" : "#991B1B") },
+                    ]}
+                  >
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
 
@@ -1508,12 +1637,14 @@ export default function PickupWorkflowScreen({
 
         <TouchableOpacity
           onPress={submitPickup}
-          disabled={!capturedItems.length || submitting}
+          disabled={isPickupCompleted || !capturedItems.length || submitting}
           style={[
             styles.completeBtn,
             {
               backgroundColor:
-                !capturedItems.length || submitting
+                isPickupCompleted
+                  ? "#94A3B8"
+                  : !capturedItems.length || submitting
                   ? theme.muted
                   : theme.primary,
             },
@@ -1525,10 +1656,32 @@ export default function PickupWorkflowScreen({
               <Text style={styles.completeBtnText}>Uploading...</Text>
             </View>
           ) : (
-            <Text style={styles.completeBtnText}>Complete Pickup</Text>
+            <Text style={styles.completeBtnText}>
+              {isPickupCompleted ? "Pickup Completed ✓" : "Complete Pickup"}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
+
+      {/* RESCHEDULE CONFIRMATION MODAL */}
+      <ConfirmModal
+        visible={rescheduleConfirmModalVisible}
+        title="Confirm Pickup Reschedule?"
+        message={
+          pendingRescheduleDate
+            ? `Are you sure you want to reschedule this pickup to ${moment(pendingRescheduleDate).format("DD MMMM YYYY")}?`
+            : "Are you sure you want to reschedule this pickup?"
+        }
+        confirmText="Confirm"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          if (pendingRescheduleDate) {
+            setRescheduleConfirmModalVisible(false);
+            await reschedulePickup(pendingRescheduleDate);
+          }
+        }}
+        onCancel={() => setRescheduleConfirmModalVisible(false)}
+      />
 
       <Modal
         visible={cameraModalVisible}
@@ -1540,12 +1693,18 @@ export default function PickupWorkflowScreen({
           <View
             style={[
               styles.cameraModal,
-              { backgroundColor: theme.card, borderColor: theme.border },
+              { backgroundColor: "#000000", borderColor: theme.border },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>
-              Capture Photos
-            </Text>
+            <View style={styles.cameraHeaderRow}>
+              <Text style={{ color: "#FFFFFF", fontSize: 18, fontWeight: "800" }}>
+                Capture Items
+              </Text>
+              <TouchableOpacity onPress={() => setCameraModalVisible(false)}>
+                <Ionicons name="close-circle-outline" size={26} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
+
             {cameraPermission?.granted ? (
               <CameraView ref={cameraRef} style={styles.cameraView} />
             ) : (
@@ -1553,46 +1712,33 @@ export default function PickupWorkflowScreen({
                 style={[
                   styles.cameraView,
                   {
-                    backgroundColor: theme.background,
-                    borderColor: theme.border,
-                    borderWidth: 1,
+                    backgroundColor: "#1E293B",
                     alignItems: "center",
                     justifyContent: "center",
                   },
                 ]}
               >
-                <Text style={[styles.helper, { color: theme.subText }]}>
+                <Text style={{ color: "#94A3B8", fontSize: 14 }}>
                   Camera permission required.
                 </Text>
               </View>
             )}
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                onPress={() => setCameraModalVisible(false)}
-                style={[
-                  styles.modalSecondaryBtn,
-                  {
-                    backgroundColor: theme.background,
-                    borderColor: theme.border,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.modalSecondaryBtnText, { color: theme.text }]}
-                >
-                  Done
-                </Text>
-              </TouchableOpacity>
+            {/* FIGMA CAMERA CONTROLS AREA */}
+            <View style={styles.cameraControlsArea}>
               <TouchableOpacity
                 onPress={takePhoto}
-                style={[
-                  styles.modalPrimaryBtn,
-                  { backgroundColor: theme.primary },
-                ]}
+                style={[styles.captureCircleBtn, { backgroundColor: theme.primary }]}
               >
-                <Ionicons name="camera-outline" size={18} color="#fff" />
-                <Text style={styles.modalPrimaryBtnText}>Capture</Text>
+                <Ionicons name="camera" size={28} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setCameraModalVisible(false)}
+                style={[styles.confirmPhotosBtn, { backgroundColor: theme.primary }]}
+              >
+                <Text style={styles.confirmPhotosBtnText}>Confirm Photos</Text>
+                <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
@@ -1919,10 +2065,44 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 6,
   },
-  actionRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  actionGrid: {
     marginTop: 14,
+    gap: 10,
+  },
+  actionRowPrimary: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  primaryActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  primaryActionText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  actionRowSecondary: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  secondaryActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  secondaryActionText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
   actionButton: {
     alignItems: "center",
@@ -2227,5 +2407,39 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     padding: 14,
+  },
+  cameraHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  cameraControlsArea: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingVertical: 16,
+  },
+  captureCircleBtn: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmPhotosBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  confirmPhotosBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

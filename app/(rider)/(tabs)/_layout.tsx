@@ -3,114 +3,101 @@ import { Tabs } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RiderHeader } from "../../../components/layout/RiderHeader";
+import { useTheme } from "../../../context/ThemeContext";
 
 export default function RiderTabsLayout() {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
 
   return (
-    <>
-      <View style={styles.container}>
-        {/* FIXED RIDER HEADER */}
-        <RiderHeader />
+    <View style={styles.container}>
+      {/* FIXED RIDER HEADER */}
+      <RiderHeader />
 
-        {/* RIDER TABS */}
-        <Tabs
-          screenOptions={{
-            headerShown: false,
-            tabBarStyle: {
-              height: 64 + insets.bottom, // Add bottom inset to height
-              paddingBottom: insets.bottom, // Push content above navigation
-              backgroundColor: "#0B1F1A",
-              borderTopWidth: 0,
-            },
-            tabBarActiveTintColor: "#34F5C5",
-            tabBarInactiveTintColor: "#94a3b8",
-            tabBarLabelStyle: {
-              fontSize: 11,
-              fontWeight: "600",
-              marginBottom: 4, // Add some spacing from bottom
-            },
-            tabBarIconStyle: {
-              marginTop: 4, // Balance the icon position
-            },
+      {/* 3 EQUAL, PERFECTLY CENTERED TABS: HOME | TASKS | PROFILE */}
+      <Tabs
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: {
+            height: 62 + insets.bottom,
+            paddingBottom: insets.bottom + 6,
+            paddingTop: 8,
+            paddingHorizontal: 0,
+            backgroundColor: theme.card,
+            borderTopColor: theme.border,
+            borderTopWidth: 1,
+            elevation: 10,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
+          },
+          tabBarActiveTintColor: theme.primary,
+          tabBarInactiveTintColor: theme.muted,
+          tabBarItemStyle: {
+            flex: 1,
+            alignItems: "center",
+            justifyContent: "center",
+            paddingHorizontal: 0,
+            marginHorizontal: 0,
+          },
+          tabBarLabelStyle: {
+            fontSize: 11,
+            fontWeight: "700",
+            marginTop: 2,
+            textAlign: "center",
+          },
+        }}
+      >
+        {/* TAB 1: HOME */}
+        <Tabs.Screen
+          name="dashboard/index"
+          options={{
+            title: "Home",
+            tabBarLabel: "Home",
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons
+                name={focused ? "home" : "home-outline"}
+                size={22}
+                color={color}
+              />
+            ),
           }}
-        >
-          <Tabs.Screen
-            name="dashboard/index"
-            options={{
-              title: "Dashboard",
-              tabBarLabel: "Dashboard",
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons
-                  name={focused ? "grid" : "grid-outline"}
-                  size={22}
-                  color={color}
-                />
-              ),
-            }}
-          />
+        />
 
-          <Tabs.Screen
-            name="pickup/index"
-            options={{
-              title: "Pickup",
-              tabBarLabel: "Pickup",
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons
-                  name={focused ? "cube" : "cube-outline"}
-                  size={22}
-                  color={color}
-                />
-              ),
-            }}
-          />
+        {/* TAB 2: TASKS (PERFECTLY DEAD-CENTERED) */}
+        <Tabs.Screen
+          name="tasks/index"
+          options={{
+            title: "Tasks",
+            tabBarLabel: "Tasks",
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons
+                name={focused ? "list" : "list-outline"}
+                size={22}
+                color={color}
+              />
+            ),
+          }}
+        />
 
-          <Tabs.Screen
-            name="delivered/index"
-            options={{
-              title: "Delivered",
-              tabBarLabel: "Delivery",
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons
-                  name={focused ? "checkmark-done" : "checkmark-done-outline"}
-                  size={22}
-                  color={color}
-                />
-              ),
-            }}
-          />
-
-          <Tabs.Screen
-            name="wallet/index"
-            options={{
-              title: "Wallet",
-              tabBarLabel: "Wallet",
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons
-                  name={focused ? "wallet" : "wallet-outline"}
-                  size={22}
-                  color={color}
-                />
-              ),
-            }}
-          />
-          <Tabs.Screen
-            name="notifications/index"
-            options={{
-              title: "Notifications",
-              tabBarLabel: "Notifications",
-              tabBarIcon: ({ color, focused }) => (
-                <Ionicons
-                  name={focused ? "notifications" : "notifications-outline"}
-                  size={22}
-                  color={color}
-                />
-              ),
-            }}
-          />
-        </Tabs>
-      </View>
-    </>
+        {/* TAB 3: PROFILE */}
+        <Tabs.Screen
+          name="profile/index"
+          options={{
+            title: "Profile",
+            tabBarLabel: "Profile",
+            tabBarIcon: ({ color, focused }) => (
+              <Ionicons
+                name={focused ? "person" : "person-outline"}
+                size={22}
+                color={color}
+              />
+            ),
+          }}
+        />
+      </Tabs>
+    </View>
   );
 }
 

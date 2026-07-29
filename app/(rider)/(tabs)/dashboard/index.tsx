@@ -1,1261 +1,706 @@
 // app/(rider)/(tabs)/dashboard/index.tsx
 import { useLocation } from "@/context/LocationContext";
 import { useAuth } from "@/context/useAuth";
-import { trackingLegService } from "@/services/trackingLegService";
+import { useRiderData } from "@/context/RiderDataContext";
+import { VRPStop } from "@/services/api/vrpTripService";
+import { openMapsNavigation } from "@/utils/navigationHelper";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
-import * as ImagePicker from "expo-image-picker";
 import moment from "moment";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
-  Animated,
   Dimensions,
-  FlatList,
-  Image,
-  InteractionManager,
   Modal,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { Skeleton } from "../../../../components/ui/Skeleton";
 import { useTheme } from "../../../../context/ThemeContext";
-import { useFadeSlide } from "../../../../hooks/useFadeSlide";
 
-const { width, height } = Dimensions.get("window");
-const CARD_WIDTH = width - 48;
-const H_CARD = Math.min(320, width * 0.85);
-
-const PICKUP_API_BASE = "https://api.shiptos.com/api/v1/rider";
-const ORDERS_API_BASE = "https://api.shiptos.com/api/v1";
-
-type Order = {
-  id: string;
-  kind: "pickup" | "delivery";
-  priority: number;
-  time: string;
-  status: "Active" | "Pending" | "Delivered";
-  name?: string;
-  address?: string;
-  contact?: string;
-  to?: string;
-  from?: string;
-  lat?: number | null;
-  lng?: number | null;
-  price?: string;
-  distance?: string;
-};
+const { width } = Dimensions.get("window");
 
 export default function Dashboard() {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user } = useAuth();
-  const {
-    lastLocation,
-    error: locationError,
-  } = useLocation();
+  const { activeTrip, refreshActiveTrip } = useRiderData();
 
-  const [tripId, setTripId] = useState<string | null>(null);
-  const [startKm, setStartKm] = useState("");
-  const [endKm, setEndKm] = useState("");
-  const [startImage, setStartImage] =
-    useState<ImagePicker.ImagePickerAsset | null>(null);
-  const [endImage, setEndImage] = useState<ImagePicker.ImagePickerAsset | null>(
-    null,
-  );
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [confirmModalVisible, setConfirmModalVisible] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
-  const [fulfilledCount, setFulfilledCount] = useState<number>(0);
-  const [deliveredCount, setDeliveredCount] = useState<number>(0);
-  const [dailyKm, setDailyKm] = useState<number>(0);
-  const [totalKm, setTotalKm] = useState<number>(0);
+  // Realtime clock interval
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-  // Modal states
-  const [showTripModal, setShowTripModal] = useState(false);
-  const [isStartingTrip, setIsStartingTrip] = useState(false);
-  const [isEndingTrip, setIsEndingTrip] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false);
-
-  const restoreOpenTrip = useCallback(async () => {
-    try {
-      if (!user?._id) return;
-
-      const res = await fetch(`${ORDERS_API_BASE}/trips/active/${user._id}`);
-      if (!res.ok) {
-        console.warn("restoreOpenTrip: failed", res.status);
-        return;
-      }
-      const json = await res.json();
-      if (json.hasActiveTrip && json.trip) {
-        setTripId(json.trip._id);
-        setStartKm(String(json.trip.startKm));
-
-        if (json.trip.startImage) {
-          setStartImage({
-            uri: json.trip.startImage,
-            fileSize: 0,
-            width: 0,
-            height: 0,
-          } as any);
-        }
-      } else {
-        setTripId(null);
-        setStartKm("");
-        setStartImage(null);
-      }
-    } catch (err) {
-      console.warn("Error restoring open trip:", err);
+  const fetchTripData = useCallback(async () => {
+    if (user?._id) {
+      await refreshActiveTrip(user._id, user.email);
     }
-  }, [user?._id]);
-
-  const fetchKilometersData = useCallback(async () => {
-    try {
-      if (!user?._id) return;
-
-      const today = getLocalYYYYMMDD();
-      const dailyRes = await fetch(
-        `${ORDERS_API_BASE}/trips/daily/${user._id}?date=${today}`,
-      );
-
-      const taskDistanceKm = await trackingLegService.getTodayDistanceKm();
-      let serverTaskDistanceKm = 0;
-      const taskTrackingRes = await fetch(
-        `${ORDERS_API_BASE}/location/tracking/rider/${user._id}/daily?date=${today}`,
-      );
-      if (taskTrackingRes.ok) {
-        const taskTrackingJson = await taskTrackingRes.json();
-        serverTaskDistanceKm =
-          taskTrackingJson?.summary?.totalDistanceKm || 0;
-      }
-      let serverDailyKm = 0;
-      if (dailyRes.ok) {
-        const dailyJson = await dailyRes.json();
-        serverDailyKm = dailyJson.totalDailyDistance || 0;
-      }
-      setDailyKm(
-        Number(
-          (
-            serverDailyKm + Math.max(taskDistanceKm, serverTaskDistanceKm)
-          ).toFixed(2),
-        ),
-      );
-
-      const totalRes = await fetch(
-        `${ORDERS_API_BASE}/trips/custom-summary/${user._id}`,
-      );
-
-      if (totalRes.ok) {
-        const totalJson = await totalRes.json();
-        setTotalKm(totalJson.userTotalKm || 0);
-      }
-    } catch (err) {
-      console.warn("Error fetching kilometers data:", err);
-    }
-  }, [user?._id]);
-
-  const getLocalYYYYMMDD = () => {
-    return moment().format("YYYY-MM-DD");
-  };
-
-  const fetchRiderTasks = useCallback(
-    async (date?: string) => {
-      try {
-        if (!user?._id) return;
-        const d = date || getLocalYYYYMMDD();
-        const url = `${PICKUP_API_BASE}/rider-tasks/${user._id}?date=${encodeURIComponent(d)}`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          console.warn("fetchRiderTasks failed:", res.status);
-          return;
-        }
-        const json = await res.json();
-        const summary = json.summary || {};
-
-        setFulfilledCount(Number(summary.totalCompletedPickups ?? 0));
-        setDeliveredCount(Number(summary.totalCompletedDeliveries ?? 0));
-      } catch (err) {
-        console.warn("Error fetching rider tasks:", err);
-      }
-    },
-    [user?._id],
-  );
-
-  const kpi = useFadeSlide(0, 20);
-
-  const compressImage = async (image: ImagePicker.ImagePickerAsset) => {
-    try {
-      setIsCompressing(true);
-
-      const originalSize = image.fileSize || 0;
-
-      // Compress image with expo-image-manipulator
-      const manipResult = await manipulateAsync(
-        image.uri,
-        [{ resize: { width: 900 } }],
-        {
-          compress: 0.5,
-          format: SaveFormat.JPEG, // Convert to JPEG
-        },
-      );
-
-      const compressedSize =
-        manipResult.width * (manipResult.height || 600) * 0.5;
-      const savedPercentage = originalSize
-        ? Math.round(((originalSize - compressedSize) / originalSize) * 100)
-        : 0;
-
-      console.log(`Image compressed: ${savedPercentage}% size reduction`);
-
-      return {
-        uri: manipResult.uri,
-        width: manipResult.width,
-        height: manipResult.height,
-        fileSize: compressedSize,
-      };
-    } catch (error) {
-      console.error("Image compression error:", error);
-      // Return original if compression fails
-      return image;
-    } finally {
-      setIsCompressing(false);
-    }
-  };
-
-  const clickPhoto = async (setter: any) => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission Required",
-        "Camera access is required to capture odometer photos",
-      );
-      return;
-    }
-
-    const res = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.4,
-      cameraType: ImagePicker.CameraType.back,
-      allowsEditing: false,
-    });
-
-    if (!res.canceled && res.assets?.length) {
-      const original = res.assets[0];
-
-      setter(original);
-
-      compressImage(original).then((compressed) => {
-        setter(compressed);
-      });
-    }
-  };
-
-  const handleStartTrip = async () => {
-    if (!startKm || !startImage || !user?._id) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter start KM and capture odometer photo",
-      );
-      return;
-    }
-
-    setIsStartingTrip(true);
-
-    const form = new FormData();
-    form.append("riderId", user._id);
-    form.append("startKm", startKm);
-    form.append("image", {
-      uri: startImage.uri,
-      name: "start.jpg",
-      type: "image/jpeg",
-    } as any);
-
-    try {
-      const res = await fetch(`${ORDERS_API_BASE}/trips/start`, {
-        method: "POST",
-        body: form,
-      });
-
-      const json = await res.json();
-
-      if (res.ok) {
-        setTripId(json.trip._id);
-        setShowTripModal(false);
-        Alert.alert("Trip Started", "Your trip has been started successfully!");
-        fetchKilometersData();
-      } else {
-        Alert.alert("Error", json.message || "Failed to start trip");
-      }
-    } catch (error) {
-      Alert.alert("Error", "Network error. Please try again.");
-    } finally {
-      setIsStartingTrip(false);
-    }
-  };
-
-  const handleEndTrip = async () => {
-    if (!endKm || !endImage || !tripId) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter end KM and capture odometer photo",
-      );
-      return;
-    }
-
-    setIsEndingTrip(true);
-
-    const form = new FormData();
-    form.append("endKm", endKm);
-    form.append("image", {
-      uri: endImage.uri,
-      name: "end.jpg",
-      type: "image/jpeg",
-    } as any);
-
-    try {
-      const res = await fetch(`${ORDERS_API_BASE}/trips/${tripId}/end`, {
-        method: "PUT",
-        body: form,
-      });
-
-      const json = await res.json();
-
-      if (res.ok) {
-        Alert.alert(
-          "Trip Completed",
-          `Distance covered: ${json.trip.distance} km\n\nGreat work!`,
-        );
-        setTripId(null);
-        setStartKm("");
-        setEndKm("");
-        setStartImage(null);
-        setEndImage(null);
-        setShowTripModal(false);
-        fetchKilometersData();
-      } else {
-        Alert.alert("Error", json.message || "Failed to end trip");
-      }
-    } catch (error) {
-      Alert.alert("Error", "Network error. Please try again.");
-    } finally {
-      setIsEndingTrip(false);
-    }
-  };
-
-  const confirmToggle = () => {
-    Alert.alert(
-      "Task Navigation",
-      "KM tracking starts from the Start Navigation button inside each pickup or delivery task.",
-    );
-  };
-
-  const openReturnToPlant = () => {
-    router.push("/(rider)/order/return-to-plant" as any);
-  };
-
-  const renderLocationStatus = () => (
-    <View style={styles.locationStatusContainer}>
-      <TouchableOpacity
-        style={[
-          styles.locationStatusBadge,
-          {
-            backgroundColor: "#10B981",
-            borderColor: theme.border,
-          },
-        ]}
-        onPress={confirmToggle}
-        activeOpacity={0.8}
-      >
-        <View style={styles.statusIndicator}>
-          <View
-            style={[
-              styles.statusDot,
-              { backgroundColor: "#10B981" },
-            ]}
-          />
-        </View>
-        <Text style={styles.statusText}>TASK NAVIGATION</Text>
-      </TouchableOpacity>
-
-      {lastLocation && (
-        <Text style={[styles.lastUpdateText, { color: theme.subText }]}>
-          Last update:{" "}
-          {new Date(lastLocation.timestamp).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </Text>
-      )}
-
-      {locationError && (
-        <Text style={styles.errorText}>⚠️ {locationError}</Text>
-      )}
-    </View>
-  );
-
-  const renderTripModal = () => (
-    <Modal
-      visible={showTripModal}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => setShowTripModal(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View
-          style={[styles.modalContent, { backgroundColor: theme.background }]}
-        >
-          {/* Header */}
-          <View style={styles.modalHeader}>
-            <View>
-              <Text style={[styles.modalTitle, { color: theme.text }]}>
-                {tripId ? "End Trip" : "Start Trip"}
-              </Text>
-              <Text style={[styles.modalSubtitle, { color: theme.subText }]}>
-                {tripId
-                  ? "Record your final odometer reading"
-                  : "Record your starting odometer reading"}
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={() => setShowTripModal(false)}
-              style={styles.closeButton}
-            >
-              <Ionicons name="close" size={24} color={theme.text} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Odometer Input */}
-            <View style={styles.inputSection}>
-              <Text style={[styles.inputLabel, { color: theme.text }]}>
-                Odometer Reading (KM)
-              </Text>
-              <View
-                style={[
-                  styles.inputWrapper,
-                  { borderColor: theme.border, backgroundColor: theme.card },
-                ]}
-              >
-                <Ionicons
-                  name="speedometer-outline"
-                  size={20}
-                  color={theme.primary}
-                  style={styles.inputIcon}
-                />
-                <TextInput
-                  placeholder={tripId ? "Enter ending KM" : "Enter starting KM"}
-                  placeholderTextColor={theme.subText}
-                  keyboardType="numeric"
-                  value={tripId ? endKm : startKm}
-                  onChangeText={tripId ? setEndKm : setStartKm}
-                  style={[styles.textInput, { color: theme.text }]}
-                />
-              </View>
-            </View>
-
-            {/* Photo Section */}
-            <View style={styles.photoSection}>
-              <View style={styles.photoLabelRow}>
-                <Text style={[styles.inputLabel, { color: theme.text }]}>
-                  Odometer Photo
-                </Text>
-                {isCompressing && (
-                  <View style={styles.compressingBadge}>
-                    <ActivityIndicator size="small" color={theme.primary} />
-                    <Text
-                      style={[styles.compressingText, { color: theme.primary }]}
-                    >
-                      Compressing...
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              {(tripId ? endImage : startImage) ? (
-                <View style={styles.imagePreviewContainer}>
-                  <Image
-                    source={{ uri: (tripId ? endImage : startImage)?.uri }}
-                    style={styles.imagePreview}
-                  />
-                  <View style={styles.imageInfoOverlay}>
-                    <View style={styles.compressionBadge}>
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={14}
-                        color="#10b981"
-                      />
-                      <Text style={styles.compressionText}>Compressed</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.retakeButton}
-                    onPress={() =>
-                      clickPhoto(tripId ? setEndImage : setStartImage)
-                    }
-                  >
-                    <Ionicons name="camera" size={16} color="#fff" />
-                    <Text style={styles.retakeText}>Retake Photo</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.photoButton,
-                    { borderColor: theme.border, backgroundColor: theme.card },
-                  ]}
-                  onPress={() =>
-                    clickPhoto(tripId ? setEndImage : setStartImage)
-                  }
-                  disabled={isCompressing}
-                >
-                  <View
-                    style={[
-                      styles.cameraIconWrapper,
-                      { backgroundColor: theme.primary + "20" },
-                    ]}
-                  >
-                    <Ionicons name="camera" size={32} color={theme.primary} />
-                  </View>
-                  <Text style={[styles.photoButtonText, { color: theme.text }]}>
-                    Capture Odometer
-                  </Text>
-                  <Text
-                    style={[
-                      styles.photoButtonSubtext,
-                      { color: theme.subText },
-                    ]}
-                  >
-                    Take a clear photo of your odometer reading
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={[styles.cancelButton, { borderColor: theme.border }]}
-                onPress={() => setShowTripModal(false)}
-              >
-                <Text style={[styles.cancelButtonText, { color: theme.text }]}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.submitButton,
-                  { backgroundColor: tripId ? "#ef4444" : theme.primary },
-                ]}
-                onPress={tripId ? handleEndTrip : handleStartTrip}
-                disabled={isStartingTrip || isEndingTrip || isCompressing}
-              >
-                {isStartingTrip || isEndingTrip ? (
-                  <>
-                    <ActivityIndicator size="small" color="#fff" />
-                    <Text style={styles.submitButtonText}>Processing...</Text>
-                  </>
-                ) : (
-                  <>
-                    <Ionicons
-                      name={tripId ? "stop-circle" : "play-circle"}
-                      size={20}
-                      color="#fff"
-                    />
-                    <Text style={styles.submitButtonText}>
-                      {tripId ? "End Trip" : "Start Trip"}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  );
+  }, [user?._id, user?.email, refreshActiveTrip]);
 
   useEffect(() => {
-    if (!user?.email) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const fetchData = async () => {
-      if (cancelled) return;
-      await Promise.all([
-        restoreOpenTrip(),
-        fetchRiderTasks(),
-        fetchKilometersData(),
-      ]);
-    };
-
-    const task = InteractionManager.runAfterInteractions(() => {
-      timer = setTimeout(fetchData, 250);
-    });
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-      task.cancel();
-    };
-  }, [user?.email, fetchRiderTasks, fetchKilometersData, restoreOpenTrip]);
+    fetchTripData();
+  }, [fetchTripData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      restoreOpenTrip(),
-      fetchRiderTasks(),
-      fetchKilometersData(),
-    ]);
+    await fetchTripData();
     setRefreshing(false);
   };
 
-  useEffect(() => {
-    return () => { };
-  }, []);
+  const handleStartWorkflow = (stop: VRPStop) => {
+    if (stop.type === "depot") return;
+    const targetId = stop.id || (stop as any)._id || "";
+    if (stop.type === "pickup") {
+      router.push({
+        pathname: "/(rider)/order/pickup/[orderId]",
+        params: { orderId: targetId },
+      });
+    } else {
+      router.push({
+        pathname: "/(rider)/order/delivered/[orderId]",
+        params: { orderId: targetId },
+      });
+    }
+  };
 
-  if (loading) {
-    return (
-      <ScrollView
-        style={[styles.container, { backgroundColor: theme.background }]}
-        contentContainerStyle={{ paddingTop: 18, paddingBottom: 120 }}
-      >
-        <View style={styles.topRow}>
-          <Skeleton
-            height={64}
-            radius={12}
-            style={{ width: CARD_WIDTH * 0.62 }}
-          />
-          <Skeleton height={40} radius={12} style={{ width: 80 }} />
-        </View>
-        <View style={{ paddingHorizontal: 16 }}>
-          <Skeleton height={H_CARD} radius={14} style={{ marginTop: 12 }} />
-        </View>
-      </ScrollView>
-    );
-  }
+  const getTimeIndicator = (date: Date) => {
+    const hour = date.getHours();
+    if (hour >= 5 && hour < 12) {
+      return { label: "Morning", icon: "sunny-outline", color: "#F59E0B" };
+    } else if (hour >= 12 && hour < 17) {
+      return { label: "Afternoon", icon: "sunny", color: "#F97316" };
+    } else if (hour >= 17 && hour < 20) {
+      return { label: "Evening", icon: "partly-sunny-outline", color: "#E11D48" };
+    } else {
+      return { label: "Night", icon: "moon-outline", color: "#6366F1" };
+    }
+  };
+
+  const timeInfo = getTimeIndicator(currentTime);
+
+  const isStopCompleted = (s: VRPStop) => s.status === "completed" || s.completed === true;
+  const nonDepotStops = activeTrip?.stops?.filter((s) => s.type !== "depot") || [];
+  const currentTask = nonDepotStops.find((s) => !isStopCompleted(s)) || nonDepotStops[0];
+  const taskIsDone = currentTask ? isStopCompleted(currentTask) : false;
 
   return (
-    <>
-      <FlatList
-        style={{ flex: 1, backgroundColor: theme.background }}
-        data={[]}
-        keyExtractor={() => "dashboard-header"}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.primary}
-          />
-        }
-        ListHeaderComponent={
-          <>
-            {/* Location Status */}
-            {renderLocationStatus()}
-
-            {/* KPI Cards */}
-            <Animated.View
-              style={[
-                styles.kpiContainer,
-                {
-                  opacity: kpi.opacity,
-                  transform: [{ translateY: kpi.translateY }],
-                },
-              ]}
-            >
-              <KpiCard
-                title="FULFILLED"
-                value={String(fulfilledCount)}
-                theme={theme}
-              />
-              <KpiCard
-                title="DELIVERED"
-                value={String(deliveredCount)}
-                theme={theme}
-              />
-            </Animated.View>
-
-            <Animated.View
-              style={[
-                styles.kpiContainer,
-                {
-                  opacity: kpi.opacity,
-                  transform: [{ translateY: kpi.translateY }],
-                },
-              ]}
-            >
-              <KpiCard title="KM TODAY" value={`${dailyKm} km`} theme={theme} />
-              <KpiCard title="TOTAL KM" value={`${totalKm} km`} theme={theme} />
-            </Animated.View>
-
-            <View style={styles.returnPlantContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.returnPlantButton,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-                onPress={openReturnToPlant}
-                activeOpacity={0.86}
-              >
-                <View
-                  style={[
-                    styles.returnPlantIcon,
-                    { backgroundColor: theme.primary + "18" },
-                  ]}
-                >
-                  <Ionicons name="business-outline" size={22} color={theme.primary} />
-                </View>
-                <View style={styles.returnPlantTextWrap}>
-                  <Text style={[styles.returnPlantTitle, { color: theme.text }]}>
-                    Return to Plant
-                  </Text>
-                  <Text style={[styles.returnPlantSub, { color: theme.subText }]}>
-                    Count KM only if you navigate back
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.subText} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Trip Tracker Card */}
-            <View style={styles.tripTrackerContainer}>
-              <View
-                style={[
-                  styles.tripTrackerCard,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-              >
-                <View style={styles.tripTrackerHeader}>
-                  <View
-                    style={[
-                      styles.tripIconWrapper,
-                      { backgroundColor: theme.primary + "15" },
-                    ]}
-                  >
-                    <Ionicons
-                      name="speedometer"
-                      size={24}
-                      color={theme.primary}
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text
-                      style={[styles.tripTrackerTitle, { color: theme.text }]}
-                    >
-                      Daily Trip Tracker
-                    </Text>
-                    <Text
-                      style={[
-                        styles.tripTrackerSubtitle,
-                        { color: theme.subText },
-                      ]}
-                    >
-                      {tripId ? "Trip in progress" : "Ready to start tracking"}
-                    </Text>
-                  </View>
-                  {tripId && (
-                    <View style={styles.activeBadge}>
-                      <View style={styles.pulseCircle} />
-                      <Text style={styles.activeText}>ACTIVE</Text>
-                    </View>
-                  )}
-                </View>
-
-                {tripId && (
-                  <View
-                    style={[
-                      styles.tripInfoBox,
-                      { backgroundColor: theme.background },
-                    ]}
-                  >
-                    <View style={styles.tripInfoItem}>
-                      <Ionicons
-                        name="play-circle"
-                        size={16}
-                        color={theme.primary}
-                      />
-                      <Text
-                        style={[styles.tripInfoLabel, { color: theme.subText }]}
-                      >
-                        Started at
-                      </Text>
-                      <Text
-                        style={[styles.tripInfoValue, { color: theme.text }]}
-                      >
-                        {startKm} km
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  style={[
-                    styles.tripActionButton,
-                    {
-                      backgroundColor: tripId ? "#ef4444" : theme.primary,
-                      borderColor: tripId ? "#dc2626" : theme.primary,
-                    },
-                  ]}
-                  onPress={() => setShowTripModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name={tripId ? "stop-circle" : "play-circle"}
-                    size={20}
-                    color="#fff"
-                  />
-                  <Text style={styles.tripActionButtonText}>
-                    {tripId ? "End Trip" : "Start New Trip"}
-                  </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#fff" />
-                </TouchableOpacity>
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={theme.primary}
+        />
+      }
+    >
+      {/* GREETING & REALTIME TIME CARD FROM FIGMA */}
+      <View
+        style={[
+          styles.greetingCard,
+          {
+            backgroundColor: theme.card,
+            borderColor: theme.border,
+          },
+        ]}
+      >
+        <View style={styles.greetingHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.greetingTitle, { color: theme.text }]}>
+              Hello, {user?.name || "Rider"}
+            </Text>
+            
+            {/* REALTIME CLOCK & SUN/MOON INDICATOR */}
+            <View style={styles.clockRow}>
+              <Ionicons name={timeInfo.icon as any} size={16} color={timeInfo.color} />
+              <Text style={[styles.clockText, { color: theme.text }]}>
+                {moment(currentTime).format("hh:mm:ss A")}
+              </Text>
+              <View style={[styles.timeTag, { backgroundColor: `${timeInfo.color}15` }]}>
+                <Text style={[styles.timeTagText, { color: timeInfo.color }]}>
+                  {timeInfo.label}
+                </Text>
               </View>
             </View>
-          </>
-        }
-        renderItem={null}
-      />
 
-      {/* Trip Modal */}
-      {renderTripModal()}
-    </>
-  );
-}
+            <Text style={[styles.greetingSubtitle, { color: theme.subText }]}>
+              {isOnline ? "You're online and ready to receive tasks" : "You are currently offline"}
+            </Text>
+          </View>
 
-function KpiCard({
-  title,
-  value,
-  theme,
-}: {
-  title: string;
-  value: string;
-  theme: any;
-}) {
-  return (
-    <View
-      style={[
-        styles.kpiCard,
-        { backgroundColor: theme.card, borderColor: theme.border },
-      ]}
-    >
-      <Text style={[styles.kpiTitle, { color: theme.subText }]}>{title}</Text>
-      <Text style={[styles.kpiValue, { color: theme.text }]}>{value}</Text>
-    </View>
+          {/* ONLINE TOGGLE SWITCH */}
+          <View style={styles.toggleContainer}>
+            <Text style={[styles.toggleText, { color: isOnline ? theme.primary : theme.subText }]}>
+              {isOnline ? "Online" : "OffLine"}
+            </Text>
+            <Switch
+              value={isOnline}
+              onValueChange={() => setConfirmModalVisible(true)}
+              trackColor={{ false: "#CBD5E1", true: theme.primary }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        </View>
+
+        {isOnline && (
+          <View style={[styles.statusBanner, { backgroundColor: theme.primarySoft }]}>
+            <Ionicons name="location-sharp" size={16} color={theme.primary} />
+            <Text style={[styles.statusBannerText, { color: theme.primary }]}>
+              Live location tracking active
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* ROUTE SUMMARY STATS CARD */}
+      {activeTrip ? (
+        <View
+          style={[
+            styles.statsCard,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <View style={styles.statsHeader}>
+            <Text style={[styles.statsTitle, { color: theme.text }]}>
+              Assigned Route #{activeTrip.routeIndex || 1}
+            </Text>
+            <View style={[styles.statusBadge, { backgroundColor: theme.primarySoft }]}>
+              <Text style={[styles.statusBadgeText, { color: theme.primary }]}>
+                {activeTrip.status.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.text }]}>
+                {activeTrip.distanceKm} km
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Total Distance</Text>
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.text }]}>
+                {activeTrip.durationHours} hrs
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Est. Duration</Text>
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.text }]}>
+                {activeTrip.stopCount}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>Total Stops</Text>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View style={[styles.emptyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <Ionicons name="bicycle-outline" size={40} color={theme.muted} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>No Active Trip Assigned</Text>
+          <Text style={[styles.emptySubtitle, { color: theme.subText }]}>
+            Pull down to refresh or wait for dispatcher assignment.
+          </Text>
+        </View>
+      )}
+
+      {/* CURRENT ACTIVE TASK CARD WITH ADDRESS */}
+      {currentTask && (
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>Current Active Task</Text>
+
+          <View
+            style={[
+              styles.taskCard,
+              {
+                backgroundColor: taskIsDone ? (isDark ? "#1E293B" : "#F1F5F9") : theme.card,
+                borderColor: taskIsDone ? "#CBD5E1" : theme.border,
+                opacity: taskIsDone ? 0.65 : 1,
+              },
+            ]}
+          >
+            <View style={styles.taskCardHeader}>
+              <View style={styles.badgeRow}>
+                <View
+                  style={[
+                    styles.sequenceBadge,
+                    { backgroundColor: taskIsDone ? "#64748B" : theme.primary },
+                  ]}
+                >
+                  <Text style={styles.sequenceText}>#{currentTask.index || 1}</Text>
+                </View>
+                <View
+                  style={[
+                    styles.typeBadge,
+                    { backgroundColor: taskIsDone ? "#E2E8F0" : theme.primarySoft },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.typeBadgeText,
+                      { color: taskIsDone ? "#64748B" : theme.primary },
+                    ]}
+                  >
+                    {currentTask.type.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+
+              {taskIsDone ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Ionicons name="checkmark-circle" size={18} color={theme.success} />
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: theme.success }}>
+                    COMPLETED
+                  </Text>
+                </View>
+              ) : currentTask.price > 0 ? (
+                <Text style={[styles.taskPrice, { color: theme.primary }]}>
+                  {currentTask.type === "pickup" ? "Estimated :" : "Collect :"} ₹{currentTask.price.toLocaleString("en-IN")}
+                </Text>
+              ) : null}
+            </View>
+
+            <Text style={[styles.taskName, { color: taskIsDone ? theme.subText : theme.text }]}>
+              {currentTask.name}
+            </Text>
+
+            {/* ENHANCED ADDRESS DISPLAY */}
+            <View style={[styles.addressBox, { backgroundColor: theme.background, borderColor: theme.border }]}>
+              <Ionicons
+                name="location"
+                size={16}
+                color={taskIsDone ? "#94A3B8" : theme.primary}
+                style={{ marginTop: 2 }}
+              />
+              <Text
+                style={[
+                  styles.addressText,
+                  { color: taskIsDone ? theme.subText : theme.text },
+                ]}
+                numberOfLines={2}
+              >
+                {currentTask.address || `Stop #${currentTask.index} Location Address`}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+              <TouchableOpacity
+                style={[
+                  styles.workflowBtn,
+                  { flex: 1, backgroundColor: theme.primarySoft, borderWidth: 1, borderColor: theme.border },
+                ]}
+                onPress={() => openMapsNavigation(currentTask.lat, currentTask.lng, currentTask.address, currentTask.name)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="navigate-circle" size={18} color={theme.primary} />
+                <Text style={[styles.workflowBtnText, { color: theme.primary }]}>Navigate</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.workflowBtn,
+                  { flex: 1.5, backgroundColor: taskIsDone ? "#64748B" : theme.primary },
+                ]}
+                onPress={() => handleStartWorkflow(currentTask)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={taskIsDone ? "eye-outline" : "arrow-forward"}
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.workflowBtnText}>
+                  {taskIsDone ? "View Details" : "Start Workflow"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* LOCATION TOGGLE CONFIRMATION MODAL */}
+      <Modal
+        visible={confirmModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setConfirmModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={[styles.modalIconBg, { backgroundColor: theme.primarySoft }]}>
+              <Ionicons name="location-outline" size={28} color={theme.primary} />
+            </View>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>
+              {isOnline ? "Disable Location Tracking?" : "Enable Location Tracking?"}
+            </Text>
+            <Text style={[styles.modalSubtitle, { color: theme.subText }]}>
+              {isOnline
+                ? "Are you sure you want to go Offline? You will stop receiving new trip assignments."
+                : "Are you sure you want to go Online? Your live GPS location will be tracked for active dispatch."}
+            </Text>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: theme.border }]}
+                onPress={() => setConfirmModalVisible(false)}
+              >
+                <Text style={[styles.modalCancelText, { color: theme.text }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: theme.primary }]}
+                onPress={() => {
+                  setIsOnline(!isOnline);
+                  setConfirmModalVisible(false);
+                }}
+              >
+                <Text style={styles.modalConfirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  // Location Status
-  locationStatusContainer: {
+  container: {
+    flex: 1,
     paddingHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 8,
-    alignItems: "center",
+    paddingTop: 16,
   },
-  locationStatusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+
+  greetingCard: {
+    padding: 20,
     borderRadius: 20,
     borderWidth: 1,
-    minWidth: 150,
-    justifyContent: "center",
-    marginBottom: 6,
-  },
-  statusIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    color: "white",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  lastUpdateText: {
-    fontSize: 11,
-    fontWeight: "600",
-    marginTop: 2,
-  },
-  errorText: {
-    fontSize: 11,
-    color: "#ef4444",
-    fontWeight: "600",
-    marginTop: 2,
+    marginBottom: 16,
   },
 
-  // KPI Cards
-  topRow: {
-    marginTop: 20,
-    paddingHorizontal: 16,
-    marginBottom: 10,
+  greetingHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  kpiContainer: {
-    paddingHorizontal: 16,
-    marginTop: 6,
-    flexDirection: "row",
+    alignItems: "flex-start",
     justifyContent: "space-between",
   },
-  kpiCard: {
-    width: "48%",
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  kpiTitle: {
-    fontSize: 11,
-    fontWeight: "700",
-    marginBottom: 6,
-    letterSpacing: 0.5,
-  },
-  kpiValue: {
+
+  greetingTitle: {
     fontSize: 20,
     fontWeight: "900",
   },
-  returnPlantContainer: {
-    marginTop: 10,
-    paddingHorizontal: 16,
-  },
-  returnPlantButton: {
-    alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: "row",
-    padding: 14,
-  },
-  returnPlantIcon: {
-    alignItems: "center",
-    borderRadius: 10,
-    height: 42,
-    justifyContent: "center",
-    marginRight: 12,
-    width: 42,
-  },
-  returnPlantTextWrap: {
-    flex: 1,
-  },
-  returnPlantTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  returnPlantSub: {
-    fontSize: 12,
-    marginTop: 3,
-  },
 
-  // Trip Tracker
-  tripTrackerContainer: {
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
-  tripTrackerCard: {
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  tripTrackerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  tripIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tripTrackerTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  tripTrackerSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  activeBadge: {
-    backgroundColor: "#10b981",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  pulseCircle: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#fff",
-    marginRight: 6,
-  },
-  activeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  tripInfoBox: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  tripInfoItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  tripInfoLabel: {
-    fontSize: 13,
-  },
-  tripInfoValue: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  tripActionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 8,
-  },
-  tripActionButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 0.3,
-  },
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 8,
-    paddingBottom: 32,
-    maxHeight: height * 0.85,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: -4 },
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(0, 0, 0, 0.05)",
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-  },
-  modalSubtitle: {
-    fontSize: 14,
-    marginTop: 4,
-  },
-  closeButton: {
-    padding: 4,
-  },
-
-  // Input Section
-  inputSection: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 10,
-  },
-  inputWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderWidth: 2,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 56,
-  },
-  inputIcon: {
-    marginRight: 10,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-
-  // Photo Section
-  photoSection: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-  },
-  photoLabelRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 10,
-  },
-  compressingBadge: {
+  clockRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    marginVertical: 4,
+  },
+
+  clockText: {
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  timeTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+
+  timeTagText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  greetingSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  toggleContainer: {
+    alignItems: "center",
+    gap: 2,
+    marginLeft: 8,
+  },
+
+  toggleText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  statusBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    marginTop: 14,
+  },
+
+  statusBannerText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  statsCard: {
+    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+
+  statsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+
+  statsTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+
+  statusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
-    backgroundColor: "rgba(59, 130, 246, 0.1)",
   },
-  compressingText: {
+
+  statusBadgeText: {
     fontSize: 11,
-    fontWeight: "700",
+    fontWeight: "800",
   },
-  photoButton: {
-    borderWidth: 2,
-    borderStyle: "dashed",
-    borderRadius: 16,
+
+  statsGrid: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+  },
+
+  statItem: {
+    alignItems: "center",
+  },
+
+  statValue: {
+    fontSize: 18,
+    fontWeight: "900",
+  },
+
+  statLabel: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "#EBE2E2",
+  },
+
+  emptyCard: {
     padding: 32,
+    borderRadius: 20,
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 20,
   },
-  cameraIconWrapper: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  photoButtonText: {
+
+  emptyTitle: {
     fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 6,
+    fontWeight: "800",
+    marginTop: 12,
   },
-  photoButtonSubtext: {
+
+  emptySubtitle: {
     fontSize: 13,
     textAlign: "center",
-    marginBottom: 8,
-  },
-  compressionNote: {
-    fontSize: 12,
-    fontWeight: "600",
     marginTop: 4,
   },
-  imagePreviewContainer: {
-    position: "relative",
+
+  sectionContainer: {
+    marginBottom: 32,
   },
-  imagePreview: {
-    width: "100%",
-    height: 220,
-    borderRadius: 16,
-    resizeMode: "cover",
+
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 12,
   },
-  imageInfoOverlay: {
-    position: "absolute",
-    top: 12,
-    left: 12,
-  },
-  compressionBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(16, 185, 129, 0.9)",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    gap: 4,
-  },
-  compressionText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  retakeButton: {
-    position: "absolute",
-    bottom: 12,
-    right: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+
+  taskCard: {
+    padding: 18,
     borderRadius: 20,
-    gap: 6,
+    borderWidth: 1,
+    gap: 10,
   },
-  retakeText: {
-    color: "#fff",
+
+  taskCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  sequenceBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  sequenceText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+
+  typeBadgeText: {
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  taskPrice: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  taskName: {
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  addressBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+
+  addressText: {
+    flex: 1,
     fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+
+  workflowBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 6,
+  },
+
+  workflowBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+
+  modalBox: {
+    width: "100%",
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: "center",
+    gap: 12,
+  },
+
+  modalIconBg: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  modalSubtitle: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+
+  modalBtnRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 8,
+    width: "100%",
+  },
+
+  modalCancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  modalCancelText: {
+    fontSize: 14,
     fontWeight: "700",
   },
 
-  // Action Buttons
-  actionButtons: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingTop: 28,
-    gap: 12,
-  },
-  cancelButton: {
+  modalConfirmBtn: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  cancelButtonText: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  submitButton: {
-    flex: 1,
-    paddingVertical: 14,
+    height: 44,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
   },
-  submitButtonText: {
-    color: "#fff",
-    fontSize: 15,
+
+  modalConfirmText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "800",
-    letterSpacing: 0.3,
   },
 });

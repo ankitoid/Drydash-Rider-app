@@ -10,15 +10,17 @@ export function RiderHeader() {
   const insets = useSafeAreaInsets();
   const { theme, isDark, toggleTheme } = useTheme();
   const { user } = useAuth();
-  const logoSource = isDark ? require("../../assets/images/logo_dark.png") : require("../../assets/images/logo.png");
+  const logoSource = isDark 
+    ? require("../../assets/images/shiptos_red_logo_new.png") 
+    : require("../../assets/images/shiptos_red_logo_new.png");
 
   return (
     <View
       style={[
         styles.container,
         {
-          paddingTop: insets.top + 12,
-          backgroundColor: theme.header,
+          paddingTop: insets.top + 8,
+          backgroundColor: theme.card,
           borderBottomColor: theme.border,
         },
       ]}
@@ -26,16 +28,25 @@ export function RiderHeader() {
       {/* LEFT */}
       <View style={styles.left}>
         <Image source={logoSource} style={styles.logo} />
-        <Text style={[styles.title, { color: theme.text }]}>Shiptos</Text>
+        <View style={styles.titleContainer}>
+          <Text style={[styles.title, { color: theme.text }]}>Shiptos</Text>
+          {user?.plantName ? (
+            <View style={[styles.plantBadge, { backgroundColor: theme.primarySoft }]}>
+              <Text style={[styles.plantText, { color: theme.primary }]}>{user.plantName}</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {/* RIGHT */}
       <View style={styles.right}>
-        <TouchableOpacity style={styles.iconBtn}
-          onPress={() => router.push("/(rider)/notifications")}>
+        <TouchableOpacity 
+          style={[styles.iconBtn, { backgroundColor: isDark ? "#1E293B" : "#F1F5F9" }]}
+          onPress={() => router.push("/(rider)/notifications")}
+        >
           <Ionicons
             name="notifications-outline"
-            size={16}
+            size={18}
             color={theme.text}
           />
         </TouchableOpacity>
@@ -47,13 +58,12 @@ export function RiderHeader() {
             styles.iconBtn,
             {
               backgroundColor: theme.primarySoft,
-              borderRadius: 20,
             },
           ]}
         >
           <Ionicons
-            name={isDark ? "sunny-outline" : "moon-outline"}
-            size={16}
+            name={isDark ? "sunny" : "moon"}
+            size={18}
             color={theme.primary}
           />
         </TouchableOpacity>
@@ -62,62 +72,92 @@ export function RiderHeader() {
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={() => router.push("/(rider)/profile")}
-          style={[styles.avatar, { backgroundColor: theme.primarySoft }]}
+          style={[styles.avatar, { backgroundColor: theme.primary }]}
         >
-          <Text style={[styles.avatarText, { color: theme.primary }]}>{(user?.name)?.slice(0,1).toUpperCase()}</Text>
+          <Text style={styles.avatarText}>{(user?.name || "R")?.slice(0, 1).toUpperCase()}</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingBottom: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
     borderBottomWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 2,
     zIndex: 100,
   },
 
   left: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
+  },
+
+  titleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
   },
 
   logo: {
-    width: 24,
-    height: 24,
+    width: 28,
+    height: 28,
     resizeMode: "contain",
   },
 
   title: {
     fontSize: 20,
-    fontWeight: "900",
-    letterSpacing: 0.4,
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+
+  plantBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+
+  plantText: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "uppercase",
   },
 
   right: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
   },
 
   iconBtn: {
-    padding: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
 
   avatarText: {
-    fontWeight: "900",
+    fontWeight: "800",
+    fontSize: 14,
+    color: "#FFFFFF",
   },
 });

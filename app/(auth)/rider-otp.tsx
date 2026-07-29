@@ -1,6 +1,7 @@
 import { useAuth } from "@/context/useAuth";
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,10 +16,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTheme } from "../../context/ThemeContext";
 
 const API_URL = "https://api.shiptos.com/api/v1/auth";
 
 export default function RiderOTP() {
+  const { theme } = useTheme();
   const { phone } = useLocalSearchParams<{ phone?: string }>();
   const { login } = useAuth();
 
@@ -27,29 +30,24 @@ export default function RiderOTP() {
   const [resendLoading, setResendLoading] = useState(false);
   const [timer, setTimer] = useState(30);
   const [message, setMessage] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
 
-  // Animations
+  // Entry Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(40)).current;
-  const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 700,
+        duration: 500,
         useNativeDriver: true,
       }),
       Animated.spring(slideAnim, {
         toValue: 0,
         friction: 7,
         tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 8,
         useNativeDriver: true,
       }),
     ]).start();
@@ -73,7 +71,7 @@ export default function RiderOTP() {
     }
   }, [message]);
 
-  /* ================= SAME SEND / RESEND OTP API ================= */
+  // Resend OTP handler
   const handleGetOtp = async () => {
     try {
       setResendLoading(true);
@@ -85,7 +83,10 @@ export default function RiderOTP() {
           "Content-Type": "application/json",
           "x-client-type": "mobile",
         },
-        body: JSON.stringify({ phoneNumber: phone }),
+        body: JSON.stringify({
+          phone: phone?.trim(),
+          phoneNumber: phone?.trim(),
+        }),
       });
 
       const data = await res.json();
@@ -98,13 +99,13 @@ export default function RiderOTP() {
       setOtp("");
       setMessage("OTP sent successfully ✓");
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+      Alert.alert("Error", error.message || "Failed to resend OTP");
     } finally {
       setResendLoading(false);
     }
   };
 
-  /* ================= TIMER ================= */
+  // Timer countdown
   useEffect(() => {
     if (timer === 0) return;
     const interval = setInterval(() => {
@@ -113,10 +114,10 @@ export default function RiderOTP() {
     return () => clearInterval(interval);
   }, [timer]);
 
-  /* ================= VERIFY OTP ================= */
+  // Verify OTP handler
   const handleVerifyOtp = async () => {
     if (otp.length !== 6) {
-      Alert.alert("Invalid OTP", "Enter a valid 6 digit OTP");
+      Alert.alert("Invalid OTP", "Please enter a valid 6-digit OTP");
       return;
     }
 
@@ -129,7 +130,11 @@ export default function RiderOTP() {
           "Content-Type": "application/json",
           "x-client-type": "mobile",
         },
-        body: JSON.stringify({ phoneNumber: phone, otp }),
+        body: JSON.stringify({
+          phone: phone?.trim(),
+          phoneNumber: phone?.trim(),
+          otp: otp.trim(),
+        }),
       });
 
       const data = await res.json();
@@ -145,28 +150,22 @@ export default function RiderOTP() {
           email: data.data.user.email,
           phone: data.data.user.phone,
           role: data.data.user.role,
-          plant: data.data.user.plant,
+          plantName: data.data.user.plantName,
         },
-        data.tokens.accessToken,
+        data.tokens.accessToken
       );
 
       router.replace("/(rider)/(tabs)/dashboard");
     } catch (error: any) {
-      Alert.alert("Error", error.message);
+      Alert.alert("Error", error.message || "Invalid OTP code");
     } finally {
       setLoading(false);
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0a0f0d" />
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={theme.background} />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -177,37 +176,35 @@ export default function RiderOTP() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Back Button */}
+          {/* BACK BUTTON */}
           <TouchableOpacity
-            style={styles.backButton}
+            style={[
+              styles.backBtn,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}
             onPress={() => router.back()}
             activeOpacity={0.7}
           >
-            <Text style={styles.backIcon}>←</Text>
+            <Ionicons name="arrow-back" size={20} color={theme.text} />
           </TouchableOpacity>
 
-          {/* Header */}
+          {/* PAGE TITLE */}
           <Animated.View
             style={[
               styles.headerSection,
               {
                 opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }, { scale: scaleAnim }],
+                transform: [{ translateY: slideAnim }],
               },
             ]}
           >
-            {/* <View style={styles.iconWrapper}>
-              <View style={styles.iconOuter}>
-                <View style={styles.iconInner}>
-                  <Text style={styles.lockIcon}>🔐</Text>
-                </View>
-              </View>
-            </View> */}
-
-            <Text style={styles.pageTitle}>Verify OTP</Text>
+            <Text style={[styles.pageTitle, { color: theme.text }]}>Verify OTP</Text>
+            <Text style={[styles.pageSubtitle, { color: theme.subText }]}>
+              Enter the 6-digit code sent to your mobile number
+            </Text>
           </Animated.View>
 
-          {/* Phone Display */}
+          {/* PHONE DISPLAY CARD */}
           <Animated.View
             style={[
               styles.phoneSection,
@@ -217,113 +214,139 @@ export default function RiderOTP() {
               },
             ]}
           >
-            <View style={styles.phoneCard}>
+            <View
+              style={[
+                styles.phoneCard,
+                { backgroundColor: theme.card, borderColor: theme.border },
+              ]}
+            >
               <View style={styles.phoneInfo}>
-                <Text style={styles.phoneLabel}>Mobile Number</Text>
+                <Text style={[styles.phoneLabel, { color: theme.subText }]}>
+                  MOBILE NUMBER
+                </Text>
                 <View style={styles.phoneRow}>
                   <Text style={styles.flagEmoji}>🇮🇳</Text>
-                  <Text style={styles.phoneNumber}>+91 {phone}</Text>
+                  <Text style={[styles.phoneNumber, { color: theme.primary }]}>
+                    +91 {phone}
+                  </Text>
                 </View>
               </View>
               <TouchableOpacity
-                style={styles.editButton}
+                style={[styles.editBtn, { backgroundColor: theme.primarySoft }]}
                 onPress={() => router.back()}
                 activeOpacity={0.8}
               >
-                <Text style={styles.editIcon}>✏️</Text>
+                <Ionicons name="pencil" size={16} color={theme.primary} />
               </TouchableOpacity>
             </View>
           </Animated.View>
 
-          {/* Success Message */}
+          {/* SUCCESS NOTICE */}
           {message && (
             <Animated.View
               style={[
                 styles.successCard,
                 {
+                  backgroundColor: theme.primarySoft,
+                  borderColor: theme.primary,
                   opacity: successAnim,
                   transform: [
                     { scale: successAnim },
                     {
                       translateY: successAnim.interpolate({
                         inputRange: [0, 1],
-                        outputRange: [-20, 0],
+                        outputRange: [-10, 0],
                       }),
                     },
                   ],
                 },
               ]}
             >
-              <Text style={styles.successIcon}>✓</Text>
-              <Text style={styles.successText}>{message}</Text>
+              <Ionicons name="checkmark-circle" size={18} color={theme.primary} />
+              <Text style={[styles.successText, { color: theme.primary }]}>
+                {message}
+              </Text>
             </Animated.View>
           )}
 
-          {/* OTP Input Card */}
+          {/* OTP INPUT CARD */}
           <Animated.View
             style={[
               styles.otpCard,
               {
+                backgroundColor: theme.card,
+                borderColor: theme.border,
                 opacity: fadeAnim,
                 transform: [{ translateY: slideAnim }],
               },
             ]}
           >
             <View style={styles.otpHeader}>
-              <Text style={styles.otpLabel}>Enter 6-Digit Code</Text>
-              {/* <View style={styles.timerBadge}>
-                <Text style={styles.timerIcon}>⏱</Text>
-                <Text style={styles.timerText}>{formatTime(timer)}</Text>
-              </View> */}
+              <Text style={[styles.otpLabel, { color: theme.subText }]}>
+                ENTER 6-DIGIT CODE
+              </Text>
             </View>
 
             <TextInput
               placeholder="000000"
-              placeholderTextColor="#334155"
-              style={styles.otpInput}
+              placeholderTextColor={theme.muted}
+              style={[
+                styles.otpInput,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: isFocused ? theme.primary : theme.border,
+                  color: theme.text,
+                },
+              ]}
               keyboardType="number-pad"
               maxLength={6}
               value={otp}
               onChangeText={setOtp}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
               autoFocus
             />
 
+            {/* OTP DOTS */}
             <View style={styles.otpDots}>
               {[0, 1, 2, 3, 4, 5].map((index) => (
                 <View
                   key={index}
-                  style={[styles.dot, otp.length > index && styles.dotFilled]}
+                  style={[
+                    styles.dot,
+                    {
+                      borderColor: otp.length > index ? theme.primary : theme.border,
+                      backgroundColor:
+                        otp.length > index ? theme.primary : theme.background,
+                    },
+                  ]}
                 />
               ))}
             </View>
 
+            {/* VERIFY BUTTON */}
             <TouchableOpacity
               style={[
-                styles.verifyButton,
-                loading && styles.verifyButtonLoading,
+                styles.verifyBtn,
+                { backgroundColor: theme.primary },
+                loading && styles.verifyBtnDisabled,
               ]}
               onPress={handleVerifyOtp}
               disabled={loading}
               activeOpacity={0.9}
             >
-              <View style={styles.buttonContent}>
-                {loading ? (
-                  <ActivityIndicator color="#0a0f0d" size="small" />
-                ) : (
-                  <>
-                    <Text style={styles.verifyButtonText}>
-                      Verify & Continue
-                    </Text>
-                    <View style={styles.buttonArrowCircle}>
-                      <Text style={styles.buttonArrow}>→</Text>
-                    </View>
-                  </>
-                )}
-              </View>
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.verifyBtnText}>Verify & Continue</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </>
+              )}
             </TouchableOpacity>
           </Animated.View>
 
-          {/* Resend Section */}
+          {/* RESEND SECTION */}
           <Animated.View
             style={[
               styles.resendSection,
@@ -333,26 +356,26 @@ export default function RiderOTP() {
               },
             ]}
           >
-            <Text style={styles.resendQuestion}>
-              {"Didn't receive the code?"}
+            <Text style={[styles.resendQuestion, { color: theme.subText }]}>
+              Didn't receive the code?
             </Text>
             <TouchableOpacity
               onPress={handleGetOtp}
               disabled={timer > 0 || resendLoading}
-              style={styles.resendButton}
+              style={styles.resendBtn}
               activeOpacity={0.7}
             >
               <Text
                 style={[
                   styles.resendText,
-                  (timer > 0 || resendLoading) && styles.resendTextDisabled,
+                  { color: timer > 0 || resendLoading ? theme.muted : theme.primary },
                 ]}
               >
                 {resendLoading
                   ? "Sending OTP..."
                   : timer > 0
-                    ? `Resend in ${timer}s`
-                    : "Resend OTP"}
+                  ? `Resend in ${timer}s`
+                  : "Resend OTP"}
               </Text>
             </TouchableOpacity>
           </Animated.View>
@@ -365,285 +388,191 @@ export default function RiderOTP() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0a0f0d",
   },
+
   keyboardView: {
     flex: 1,
   },
+
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingVertical: 32,
-    // justifyContent: "center",
+    paddingTop: 48,
+    paddingBottom: 32,
   },
-  backButton: {
+
+  backBtn: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    borderWidth: 2,
-    borderColor: "rgba(16, 185, 129, 0.1)",
+    borderWidth: 1,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 20,
   },
-  backIcon: {
-    fontSize: 22,
-    color: "#10b981",
+
+  headerSection: {
+    marginBottom: 24,
+  },
+
+  pageTitle: {
+    fontSize: 26,
     fontWeight: "900",
     marginBottom: 6,
   },
-  headerSection: {
-    alignItems: "center",
-    marginBottom: 28,
-  },
-  iconWrapper: {
-    marginBottom: 20,
-  },
-  iconOuter: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: "rgba(16, 185, 129, 0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.15)",
-  },
-  iconInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  lockIcon: {
-    fontSize: 32,
-  },
-  pageTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#ffffff",
-    marginBottom: 2,
-    letterSpacing: -0.5,
-  },
+
   pageSubtitle: {
     fontSize: 14,
-    color: "#94a3b8",
-    textAlign: "center",
+    lineHeight: 20,
   },
+
   phoneSection: {
     marginBottom: 20,
   },
+
   phoneCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
     borderRadius: 18,
-    padding: 18,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.1)",
   },
+
   phoneInfo: {
     flex: 1,
   },
+
   phoneLabel: {
-    fontSize: 11,
-    color: "#64748b",
-    fontWeight: "600",
-    marginBottom: 6,
-    textTransform: "uppercase",
+    fontSize: 10,
+    fontWeight: "800",
+    marginBottom: 4,
     letterSpacing: 0.5,
   },
+
   phoneRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
+
   flagEmoji: {
     fontSize: 18,
   },
+
   phoneNumber: {
     fontSize: 17,
-    fontWeight: "700",
-    color: "#10b981",
-    letterSpacing: 0.5,
+    fontWeight: "800",
   },
-  editButton: {
-    width: 40,
-    height: 40,
+
+  editBtn: {
+    width: 36,
+    height: 36,
     borderRadius: 12,
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
-  editIcon: {
-    fontSize: 16,
-  },
+
   successCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(16, 185, 129, 0.12)",
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.3)",
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
-    gap: 10,
+    gap: 8,
   },
-  successIcon: {
-    fontSize: 18,
-    color: "#10b981",
-  },
+
   successText: {
-    color: "#10b981",
     fontWeight: "700",
     fontSize: 14,
   },
+
   otpCard: {
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
     borderRadius: 24,
     padding: 24,
     borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.1)",
     marginBottom: 24,
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
   },
+
   otpHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
   },
+
   otpLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#e2e8f0",
+    fontSize: 11,
+    fontWeight: "800",
     letterSpacing: 0.5,
   },
-  timerBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(16, 185, 129, 0.1)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    gap: 6,
-  },
-  timerIcon: {
-    fontSize: 12,
-  },
-  timerText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#10b981",
-  },
+
   otpInput: {
-    height: 52,
-    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    height: 54,
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "rgba(16, 185, 129, 0.2)",
-    color: "#ffffff",
-    fontSize: 20,
-    fontWeight: "800",
+    borderWidth: 1.5,
+    fontSize: 22,
+    fontWeight: "900",
     textAlign: "center",
-    letterSpacing: 12,
-    marginBottom: 16,
+    letterSpacing: 10,
+    marginBottom: 18,
   },
+
   otpDots: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 12,
-    marginBottom: 16,
+    gap: 10,
+    marginBottom: 20,
   },
+
   dot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
-    borderWidth: 2,
-    borderColor: "rgba(16, 185, 129, 0.2)",
+    borderWidth: 1.5,
   },
-  dotFilled: {
-    backgroundColor: "#10b981",
-    borderColor: "#10b981",
-  },
-  verifyButton: {
-    backgroundColor: "#10b981",
+
+  verifyBtn: {
+    height: 52,
     borderRadius: 16,
-    overflow: "hidden",
-  },
-  verifyButtonLoading: {
-    opacity: 0.7,
-  },
-  buttonContent: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
-    gap: 12,
+    gap: 8,
   },
-  verifyButtonText: {
+
+  verifyBtnDisabled: {
+    opacity: 0.7,
+  },
+
+  verifyBtnText: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#0a0f0d",
-    letterSpacing: 0.3,
+    color: "#FFFFFF",
   },
-  buttonArrowCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(10, 15, 13, 0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  buttonArrow: {
-    fontSize: 16,
-    color: "#0a0f0d",
-    fontWeight: "900",
-  },
+
   resendSection: {
     alignItems: "center",
     marginBottom: 20,
   },
+
   resendQuestion: {
     fontSize: 13,
-    color: "#64748b",
-    marginBottom: 10,
+    marginBottom: 6,
   },
-  resendButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+
+  resendBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
   },
+
   resendText: {
     fontSize: 15,
-    fontWeight: "700",
-    color: "#10b981",
-  },
-  resendTextDisabled: {
-    color: "#475569",
-  },
-  infoCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    backgroundColor: "rgba(15, 23, 42, 0.4)",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "rgba(16, 185, 129, 0.08)",
-    gap: 12,
-  },
-  infoIcon: {
-    fontSize: 18,
-    marginTop: 2,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 12,
-    color: "#94a3b8",
-    lineHeight: 18,
+    fontWeight: "800",
   },
 });

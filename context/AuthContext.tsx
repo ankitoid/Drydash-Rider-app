@@ -30,7 +30,7 @@ export interface Rider {
   email: string;
   phone: string;
   role: string;
-  plant: string;
+  plantName: string;
 }
 
 interface AuthContextType {
@@ -141,7 +141,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             email: profile.email,
             phone: profile.phone,
             role: profile.role,
-            plant: profile.plant,
+            plantName: profile.plantName,
           };
 
           setUser(mappedUser);
