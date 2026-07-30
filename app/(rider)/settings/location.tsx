@@ -19,6 +19,7 @@ import * as IntentLauncher from "expo-intent-launcher";
 import Constants from "expo-constants";
 import { locationService } from "@/services/locationService";
 import { promptBatteryOptimization } from "@/services/batteryOptimization";
+import { openOverlaySettingsDirectly } from "@/services/OverlayManager";
 
 const getPackageName = () =>
   Constants.expoConfig?.android?.package ??
@@ -58,7 +59,7 @@ async function openAllSettings() {
 }
 
 export default function LocationSettings() {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const [isEnabled, setIsEnabled] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
   const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
@@ -113,8 +114,8 @@ export default function LocationSettings() {
   };
 
   const handleEnableTracking = async () => {
-      try {
-        setIsBusy(true);
+    try {
+      setIsBusy(true);
 
       const permissionState = await locationService.checkPermissions();
       if (permissionState === "denied") {
@@ -154,9 +155,9 @@ export default function LocationSettings() {
         setIsEnabled(true);
         Alert.alert("Ready", "Your device is now prepared for live location sharing.");
       }
-      } finally {
-        setIsBusy(false);
-      }
+    } finally {
+      setIsBusy(false);
+    }
   };
 
   const handleSavePreferences = async () => {
@@ -166,8 +167,6 @@ export default function LocationSettings() {
     });
     Alert.alert("Saved", "Tracking preferences have been updated.");
   };
-
-
 
   return (
     <ScrollView
@@ -182,10 +181,21 @@ export default function LocationSettings() {
         <Text style={[styles.title, { color: theme.text }]}>Tracking Setup</Text>
       </View>
 
-      <View style={[styles.heroCard, { backgroundColor: theme.card }]}>
+      {/* HERO CARD */}
+      <View
+        style={[
+          styles.heroCard,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
         <View style={styles.heroRow}>
-          <View style={[styles.heroIcon, { backgroundColor: "#10b98120" }]}>
-            <Ionicons name="location" size={24} color="#10b981" />
+          <View
+            style={[
+              styles.heroIcon,
+              { backgroundColor: theme.primary + "1A" },
+            ]}
+          >
+            <Ionicons name="location" size={24} color={theme.primary} />
           </View>
           <View style={styles.heroCopy}>
             <Text style={[styles.heroTitle, { color: theme.text }]}>
@@ -198,9 +208,10 @@ export default function LocationSettings() {
         </View>
 
         <TouchableOpacity
-          style={[styles.primaryButton, { backgroundColor: "#10b981" }]}
+          style={[styles.primaryButton, { backgroundColor: theme.primary }]}
           onPress={handleEnableTracking}
           disabled={isBusy}
+          activeOpacity={0.88}
         >
           {isBusy ? (
             <ActivityIndicator color="#fff" />
@@ -215,14 +226,20 @@ export default function LocationSettings() {
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.card, { backgroundColor: theme.card }]}>
+      {/* DEVICE CHECK CARD */}
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
         <View style={styles.cardTitleRow}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>
             Device check
           </Text>
           <TouchableOpacity
             onPress={refreshStatus}
-            style={styles.refreshButton}
+            style={[styles.refreshButton, { backgroundColor: theme.primary + "15" }]}
             activeOpacity={0.8}
           >
             {isRefreshingStatus ? (
@@ -263,17 +280,28 @@ export default function LocationSettings() {
         />
       </View>
 
-      <View style={[styles.card, { backgroundColor: theme.card }]}>
+      {/* QUICK PHONE SETTINGS CARD */}
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
         <Text style={[styles.cardTitle, { color: theme.text }]}>
           Quick phone settings
         </Text>
 
         <SettingAction
+          icon="layers-outline"
+          title="Display Over Other Apps"
+          subtitle="Allow floating mini-window tracking overlay when using other apps."
+          onPress={openOverlaySettingsDirectly}
+        />
+        <SettingAction
           icon="phone-portrait-outline"
           title="Open App Info"
           subtitle="Turn on notifications, background activity, and check permissions."
           onPress={openAppDetails}
-          themeColor={theme.text}
         />
         <SettingAction
           icon="battery-charging-outline"
@@ -282,25 +310,28 @@ export default function LocationSettings() {
           onPress={() => {
             void promptBatteryOptimization();
           }}
-          themeColor={theme.text}
         />
         <SettingAction
           icon="navigate-outline"
           title="Open Location Settings"
           subtitle="Make sure GPS and location services are enabled."
           onPress={openLocationSettings}
-          themeColor={theme.text}
         />
         <SettingAction
           icon="settings-outline"
           title="Open All Settings"
           subtitle="Access system settings page if needed."
           onPress={openAllSettings}
-          themeColor={theme.text}
         />
       </View>
 
-      <View style={[styles.card, { backgroundColor: theme.card }]}>
+      {/* TRACKING PREFERENCES CARD */}
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
         <Text style={[styles.cardTitle, { color: theme.text }]}>
           Tracking preferences
         </Text>
@@ -315,13 +346,15 @@ export default function LocationSettings() {
                 key={seconds}
                 style={[
                   styles.optionPill,
-                  updateInterval === seconds && styles.optionPillActive,
+                  { backgroundColor: isDark ? "#334155" : "#f1f5f9" },
+                  updateInterval === seconds && { backgroundColor: theme.primary },
                 ]}
                 onPress={() => setUpdateInterval(seconds)}
               >
                 <Text
                   style={[
                     styles.optionText,
+                    { color: theme.subText },
                     updateInterval === seconds && styles.optionTextActive,
                   ]}
                 >
@@ -342,13 +375,15 @@ export default function LocationSettings() {
                 key={meters}
                 style={[
                   styles.optionPill,
-                  distanceFilter === meters && styles.optionPillActivePurple,
+                  { backgroundColor: isDark ? "#334155" : "#f1f5f9" },
+                  distanceFilter === meters && { backgroundColor: "#8b5cf6" },
                 ]}
                 onPress={() => setDistanceFilter(meters)}
               >
                 <Text
                   style={[
                     styles.optionText,
+                    { color: theme.subText },
                     distanceFilter === meters && styles.optionTextActive,
                   ]}
                 >
@@ -362,12 +397,19 @@ export default function LocationSettings() {
         <TouchableOpacity
           style={[styles.secondaryButton, { backgroundColor: theme.primary }]}
           onPress={handleSavePreferences}
+          activeOpacity={0.88}
         >
           <Text style={styles.secondaryButtonText}>Save Preferences</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.card, { backgroundColor: theme.card }]}>
+      {/* WHY THIS MATTERS CARD */}
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: theme.card, borderColor: theme.border },
+        ]}
+      >
         <Text style={[styles.cardTitle, { color: theme.text }]}>
           Why this matters
         </Text>
@@ -377,8 +419,12 @@ export default function LocationSettings() {
       </View>
 
       <TouchableOpacity
-        style={[styles.footerButton, { backgroundColor: "#0f172a" }]}
+        style={[
+          styles.footerButton,
+          { backgroundColor: isDark ? "#1E293B" : "#0F172A" },
+        ]}
         onPress={() => router.push("/(rider)/(tabs)/dashboard" as any)}
+        activeOpacity={0.88}
       >
         <Ionicons name="speedometer-outline" size={18} color="#fff" />
         <Text style={styles.footerButtonText}>Go to Dashboard</Text>
@@ -392,24 +438,27 @@ function SettingAction({
   title,
   subtitle,
   onPress,
-  themeColor,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle: string;
   onPress: () => Promise<void> | void;
-  themeColor: string;
 }) {
+  const { theme } = useTheme();
   return (
-    <TouchableOpacity style={styles.actionRow} activeOpacity={0.82} onPress={onPress}>
-      <View style={styles.actionIcon}>
-        <Ionicons name={icon} size={20} color="#10b981" />
+    <TouchableOpacity
+      style={[styles.actionRow, { borderTopColor: theme.border }]}
+      activeOpacity={0.82}
+      onPress={onPress}
+    >
+      <View style={[styles.actionIcon, { backgroundColor: theme.primary + "15" }]}>
+        <Ionicons name={icon} size={20} color={theme.primary} />
       </View>
       <View style={styles.actionCopy}>
-        <Text style={[styles.actionTitle, { color: themeColor }]}>{title}</Text>
-        <Text style={styles.actionSubtitle}>{subtitle}</Text>
+        <Text style={[styles.actionTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.actionSubtitle, { color: theme.subText }]}>{subtitle}</Text>
       </View>
-      <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
+      <Ionicons name="chevron-forward" size={20} color={theme.subText} />
     </TouchableOpacity>
   );
 }
@@ -423,14 +472,26 @@ function StatusRow({
   title: string;
   subtitle: string;
 }) {
+  const { theme } = useTheme();
   return (
-    <View style={styles.statusRow}>
-      <View style={[styles.statusDotWrap, { backgroundColor: ok ? "#10b98118" : "#ef444418" }]}>
-        <Ionicons name={ok ? "checkmark" : "close"} size={14} color={ok ? "#10b981" : "#ef4444"} />
+    <View style={[styles.statusRow, { borderTopColor: theme.border }]}>
+      <View
+        style={[
+          styles.statusDotWrap,
+          { backgroundColor: ok ? "#10b98118" : "#ef444418" },
+        ]}
+      >
+        <Ionicons
+          name={ok ? "checkmark" : "close"}
+          size={14}
+          color={ok ? "#10b981" : "#ef4444"}
+        />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.statusTitle}>{title}</Text>
-        <Text style={styles.statusSubtitle}>{subtitle}</Text>
+        <Text style={[styles.statusTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.statusSubtitle, { color: theme.subText }]}>
+          {subtitle}
+        </Text>
       </View>
       <Text style={[styles.statusLabel, { color: ok ? "#10b981" : "#ef4444" }]}>
         {ok ? "OK" : "Needs work"}
@@ -456,13 +517,15 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   title: {
-    fontSize: 24,
+    marginTop: 5,
+    fontSize: 20,
     fontWeight: "900",
   },
   heroCard: {
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
+    borderWidth: 1,
   },
   heroRow: {
     flexDirection: "row",
@@ -508,7 +571,6 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.05)",
   },
   cardTitle: {
     fontSize: 17,
@@ -529,7 +591,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 10,
-    backgroundColor: "#10b98114",
   },
   refreshText: {
     fontSize: 12,
@@ -541,7 +602,6 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: "rgba(148,163,184,0.18)",
   },
   actionIcon: {
     width: 38,
@@ -549,7 +609,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#10b98114",
   },
   actionCopy: {
     flex: 1,
@@ -561,7 +620,6 @@ const styles = StyleSheet.create({
   },
   actionSubtitle: {
     fontSize: 12,
-    color: "#64748b",
     lineHeight: 17,
   },
   statusRow: {
@@ -570,7 +628,6 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: "rgba(148,163,184,0.15)",
   },
   statusDotWrap: {
     width: 28,
@@ -582,41 +639,15 @@ const styles = StyleSheet.create({
   statusTitle: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#0f172a",
   },
   statusSubtitle: {
     fontSize: 12,
     lineHeight: 16,
-    color: "#64748b",
     marginTop: 2,
   },
   statusLabel: {
     fontSize: 11,
     fontWeight: "900",
-  },
-  stepRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    marginBottom: 12,
-  },
-  stepIndex: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 1,
-  },
-  stepIndexText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "900",
-  },
-  stepText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 19,
   },
   settingRow: {
     marginBottom: 20,
@@ -635,16 +666,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    backgroundColor: "#f1f5f9",
-  },
-  optionPillActive: {
-    backgroundColor: "#10b981",
-  },
-  optionPillActivePurple: {
-    backgroundColor: "#8b5cf6",
   },
   optionText: {
-    color: "#64748b",
     fontWeight: "800",
     fontSize: 12,
   },

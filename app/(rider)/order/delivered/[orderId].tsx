@@ -3,6 +3,7 @@ import CaptureImageModal from "@/components/Modals/CaptureImageModal";
 import ConfirmModal from "@/components/Modals/ConfirmModal";
 import FollowupPickupModal from "@/components/Modals/FollowupPickupModal";
 import { useAuth } from "@/context/useAuth";
+import { openMapsNavigation } from "@/utils/navigationHelper";
 import { createFollowupPickupApi } from "@/services/api/followupPickup";
 import { socket } from "@/services/socket";
 import { Ionicons } from "@expo/vector-icons";
@@ -103,10 +104,24 @@ type DeliveryActionMode = "deliver" | "cash" | null;
 
 /* ===================== COMPONENT ===================== */
 
+import { useRiderData } from "@/context/RiderDataContext";
+
 export default function DeliveredOrderDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const { activeTrip } = useRiderData();
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState<OrderDetails | null>(null);
+
+  const matchedStop = activeTrip?.stops?.find(
+    (s) => String(s.id) === String(orderId) || String((s as any)._id) === String(orderId)
+  );
+
+  const isDelivered =
+    matchedStop?.status === "completed" ||
+    matchedStop?.completed === true ||
+    order?.status === "delivered" ||
+    order?.status === "completed" ||
+    (order as any)?.statusHistory?.delivered != null;
   const [showConfirm, setShowConfirm] = useState(false);
   const [delivering, setDelivering] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -126,6 +141,11 @@ export default function DeliveredOrderDetails() {
   const [rescheduleVisible, setRescheduleVisible] = useState(false);
   const [orderToReschedule, setOrderToReschedule] =
     useState<OrderDetails | null>(null);
+  const [rescheduleConfirmVisible, setRescheduleConfirmVisible] = useState(false);
+  const [pendingDeliveryReschedule, setPendingDeliveryReschedule] = useState<{
+    chosenDate: Date | null;
+    answered: boolean;
+  } | null>(null);
   const [rescheduling, setRescheduling] = useState(false);
   const [returnVisible, setReturnVisible] = useState(false);
   const [returningOrder, setReturningOrder] = useState(false);
@@ -340,7 +360,7 @@ export default function DeliveredOrderDetails() {
 
   const navigateToDeliveredTab = () => {
     router.replace({
-      pathname: "/(rider)/(tabs)/delivered",
+      pathname: "/(rider)/(tabs)/tasks",
       params: { completedOrderId: orderId },
     });
   };
@@ -433,7 +453,7 @@ export default function DeliveredOrderDetails() {
 
       setShowFollowupPickupPrompt(false);
       router.replace({
-        pathname: "/(rider)/(tabs)/pickup",
+        pathname: "/(rider)/(tabs)/tasks",
         params: { createdFromOrderId: orderId },
       });
     } catch (error) {
@@ -574,7 +594,7 @@ export default function DeliveredOrderDetails() {
 
       setReturnVisible(false);
       router.replace({
-        pathname: "/(rider)/(tabs)/pickup",
+        pathname: "/(rider)/(tabs)/tasks",
         params: { completedOrderId: orderId },
       });
     } catch (err) {
@@ -631,7 +651,7 @@ export default function DeliveredOrderDetails() {
 
       // ✅ 3️⃣ Navigate back with completed order id
       router.replace({
-        pathname: "/(rider)/(tabs)/pickup",
+        pathname: "/(rider)/(tabs)/tasks",
         params: { completedOrderId: orderIdParam },
       });
     } catch (err) {
@@ -990,6 +1010,32 @@ export default function DeliveredOrderDetails() {
         </Text>
       </View>
 
+      {isDelivered && (
+        <View
+          style={{
+            backgroundColor: "#DCFCE7",
+            borderColor: "#86EFAC",
+            borderWidth: 1,
+            borderRadius: 16,
+            padding: 14,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 16,
+          }}
+        >
+          <Ionicons name="checkmark-circle" size={24} color="#166534" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#166534", fontSize: 14, fontWeight: "800" }}>
+              Delivery Completed ✓
+            </Text>
+            <Text style={{ color: "#15803D", fontSize: 12, marginTop: 2 }}>
+              This delivery has been completed. Items and payment summary are viewable in read-only mode.
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* DELIVERY DETAILS */}
       <View style={[styles.card, { backgroundColor: theme.card }]}>
         <View style={[styles.heading, { backgroundColor: theme.card }]}>
@@ -1039,6 +1085,21 @@ export default function DeliveredOrderDetails() {
           >
             <Ionicons name="logo-whatsapp" size={18} color="#fff" />
             <Text style={styles.actionBtnText}>WhatsApp</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: "#2563EB" }]}
+            onPress={() =>
+              openMapsNavigation(
+                (order as any)?.deliveryLocation?.latitude || (order as any)?.location?.latitude,
+                (order as any)?.deliveryLocation?.longitude || (order as any)?.location?.longitude,
+                order.address,
+                order.customerName,
+              )
+            }
+          >
+            <Ionicons name="navigate-outline" size={18} color="#fff" />
+            <Text style={styles.actionBtnText}>Navigate</Text>
           </TouchableOpacity>
         </View>
 
@@ -1125,31 +1186,42 @@ export default function DeliveredOrderDetails() {
 
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.actionBtn, styles.deliveredBtn]}
+            style={[
+              styles.actionBtn,
+              styles.deliveredBtn,
+              isDelivered && { backgroundColor: "#94A3B8" },
+            ]}
             activeOpacity={0.8}
             onPress={isPaid ? openDeliveredConfirmation : openPaymentOptions}
-            disabled={delivering || qrLoading}
+            disabled={isDelivered || delivering || qrLoading}
           >
             <Ionicons
-              name={isPaid ? "checkmark-circle-outline" : "wallet-outline"}
-              size={20}
+              name={isDelivered ? "checkmark-circle" : isPaid ? "checkmark-circle-outline" : "wallet-outline"}
+              size={15}
               color="#fff"
             />
             <Text style={styles.actionBtnText}>
-              {delivering
+              {isDelivered
+                ? "Delivery Completed"
+                : delivering
                 ? "Processing..."
                 : isPaid
-                  ? "Mark as Delivered"
-                  : qrLoading
-                    ? "Preparing QR..."
-                    : "Collect Payment"}
+                ? "Mark as Delivered"
+                : qrLoading
+                ? "Preparing QR..."
+                : "Collect Payment"}
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionBtn, styles.rescheduleBtn]}
+            style={[
+              styles.actionBtn,
+              styles.rescheduleBtn,
+              isDelivered && { backgroundColor: "#CBD5E1", opacity: 0.6 },
+            ]}
             activeOpacity={0.8}
             onPress={() => openReschedule(order)}
+            disabled={isDelivered}
           >
             <Ionicons name="calendar-outline" size={20} color="#fff" />
             <Text style={styles.actionBtnText}>Reschedule</Text>
@@ -1393,9 +1465,35 @@ export default function DeliveredOrderDetails() {
         order={orderToReschedule}
         onConfirm={async (chosenDate, answered) => {
           if (!orderToReschedule) return;
-          await rescheduleOrder(orderToReschedule._id, chosenDate, answered);
+          setRescheduleVisible(false);
+          setPendingDeliveryReschedule({ chosenDate, answered });
+          setRescheduleConfirmVisible(true);
         }}
         loading={rescheduling}
+      />
+
+      {/* RESCHEDULE CONFIRMATION MODAL */}
+      <ConfirmModal
+        visible={rescheduleConfirmVisible}
+        title="Confirm Delivery Reschedule?"
+        message={
+          pendingDeliveryReschedule?.chosenDate
+            ? `Are you sure you want to reschedule this delivery to ${moment(pendingDeliveryReschedule.chosenDate).format("DD MMMM YYYY")}?`
+            : "Are you sure you want to reschedule this delivery?"
+        }
+        confirmText="Confirm"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          if (orderToReschedule && pendingDeliveryReschedule) {
+            setRescheduleConfirmVisible(false);
+            await rescheduleOrder(
+              orderToReschedule._id,
+              pendingDeliveryReschedule.chosenDate,
+              pendingDeliveryReschedule.answered,
+            );
+          }
+        }}
+        onCancel={() => setRescheduleConfirmVisible(false)}
       />
     </ScrollView>
   );

@@ -15,8 +15,8 @@ export default function Splash() {
   const hasNavigatedRef = useRef(false);
 
   const logoSource = isDark
-    ? require("../assets/images/logo_dark.png")
-    : require("../assets/images/logo.png");
+    ? require("../assets/images/shiptos_red_logo_new.png")
+    : require("../assets/images/shiptos_red_logo_new.png");
 
   useEffect(() => {
     SplashScreen.preventAutoHideAsync();

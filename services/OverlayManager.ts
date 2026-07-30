@@ -31,6 +31,21 @@ export async function isOverlayPermissionGranted(): Promise<boolean> {
   }
 }
 
+export async function openOverlaySettingsDirectly(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    await RiderTrackingModule?.requestOverlayPermission?.();
+  } catch {
+    try {
+      await Linking.sendIntent('android.settings.action.MANAGE_OVERLAY_PERMISSION', [
+        { key: 'android.provider.extra.APP_PACKAGE', value: 'com.shiptos.captain' },
+      ]);
+    } catch {
+      await Linking.openSettings();
+    }
+  }
+}
+
 /**
  * Open Android settings so the user can grant SYSTEM_ALERT_WINDOW.
  * Returns true if the user was directed to settings, false if unavailable.
@@ -46,20 +61,7 @@ export async function requestOverlayPermission(): Promise<boolean> {
         {
           text: 'Open Settings',
           onPress: async () => {
-            try {
-              // Primary: use native module (uses currentActivity — works in release builds)
-              await RiderTrackingModule?.requestOverlayPermission?.();
-            } catch {
-              try {
-                // Fallback 1: Linking.sendIntent — direct Android Intent from JS
-                await Linking.sendIntent('android.settings.action.MANAGE_OVERLAY_PERMISSION', [
-                  { key: 'android.provider.extra.APP_PACKAGE', value: 'com.shiptos.captain' },
-                ]);
-              } catch {
-                // Fallback 2: generic app settings
-                await Linking.openSettings();
-              }
-            }
+            await openOverlaySettingsDirectly();
             resolve(true);
           },
         },
@@ -74,6 +76,20 @@ export async function requestOverlayPermission(): Promise<boolean> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 let _activeMiniWindow: 'pip' | 'overlay' | null = null;
+let _isCameraActive = false;
+
+/**
+ * Set whether a camera activity is currently active.
+ * Prevents PiP/Overlay from opening when app goes background during camera capture.
+ */
+export function setCameraActive(active: boolean): void {
+  _isCameraActive = active;
+  console.log('[OverlayManager] Camera active state set to:', active);
+}
+
+export function isCameraActive(): boolean {
+  return _isCameraActive;
+}
 
 /**
  * Show a mini tracking window when the app moves to the background.
@@ -84,6 +100,10 @@ let _activeMiniWindow: 'pip' | 'overlay' | null = null;
 export async function showMiniWindow(): Promise<void> {
   if (Platform.OS !== 'android') return;
   if (_activeMiniWindow) return; // Already shown
+  if (_isCameraActive) {
+    console.log('[OverlayManager] Camera active — skipping mini window');
+    return;
+  }
 
   try {
     const pipSupported: boolean =

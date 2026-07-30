@@ -9,6 +9,7 @@ import {
 import { showMiniWindow, hideMiniWindow, getActiveMiniWindow } from "@/services/OverlayManager";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
+import * as IntentLauncher from "expo-intent-launcher";
 import {
   createContext,
   useContext,
@@ -22,10 +23,17 @@ import {
   AppState,
   AppStateStatus,
   InteractionManager,
+  Linking,
+  Modal,
   NativeEventEmitter,
   NativeModules,
   Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "./useAuth";
 
 interface LocationContextType {
@@ -37,14 +45,18 @@ interface LocationContextType {
   isPiPActive: boolean;
   /** Whether a floating overlay is currently active */
   isOverlayActive: boolean;
+  /** Whether device GPS / location services are disabled during active trip */
+  isLocationDisabled: boolean;
+  /** Request device to enable GPS location provider */
+  enableLocationServices: () => Promise<void>;
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(
   undefined,
 );
 
-// How often the watchdog checks if the background task is alive (ms)
-const WATCHDOG_INTERVAL = 15000; // 15 seconds
+// How often the watchdog checks if the background task & GPS services are alive (ms)
+const WATCHDOG_INTERVAL = 2500; // 2.5 seconds
 
 export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -63,6 +75,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [error, setError] = useState<string | null>(null);
   const [isPiPActive, setIsPiPActive] = useState(false);
   const [isOverlayActive, setIsOverlayActive] = useState(false);
+  const [isLocationDisabled, setIsLocationDisabled] = useState(false);
+
+  const alertEmittedRef = useRef(false);
 
   useEffect(() => {
     const sub = nativeTrackingEmitter?.addListener(
@@ -114,6 +129,81 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const foregroundSubscriptionRef =
     useRef<Location.LocationSubscription | null>(null);
 
+  /* ---------- GPS SERVICE CHECK & ADMIN ALERT ---------- */
+
+  const checkGpsServices = async (): Promise<boolean> => {
+    if (!trackingRef.current) {
+      setIsLocationDisabled(false);
+      alertEmittedRef.current = false;
+      return true;
+    }
+
+    try {
+      const enabled = await Location.hasServicesEnabledAsync();
+      const { status } = await Location.getForegroundPermissionsAsync();
+      const isGpsOff = !enabled || status !== "granted";
+
+      if (isGpsOff) {
+        setIsLocationDisabled(true);
+
+        // Emit admin alert once per location turn-off event
+        if (!alertEmittedRef.current && user?._id) {
+          alertEmittedRef.current = true;
+          console.warn("🚨 Admin Alert: Rider turned off GPS during active trip!");
+          if (socket.connected) {
+            socket.emit("riderLocationDisabled", {
+              riderId: user._id,
+              riderName: user.name || "Rider",
+              phone: user.phone || "",
+              reason: !enabled
+                ? "GPS Provider Turned Off on Device"
+                : "Location Permission Revoked",
+              timestamp: Date.now(),
+            });
+            socket.emit("riderStatusUpdate", {
+              riderId: user._id,
+              status: "location_disabled",
+            });
+          }
+        }
+        return false;
+      } else {
+        setIsLocationDisabled(false);
+        alertEmittedRef.current = false;
+        return true;
+      }
+    } catch (err) {
+      console.warn("[LocationContext] checkGpsServices failed:", err);
+      return true;
+    }
+  };
+
+  const enableLocationServices = async (): Promise<void> => {
+    try {
+      if (Platform.OS === "android") {
+        try {
+          await Location.enableNetworkProviderAsync();
+        } catch {
+          try {
+            await IntentLauncher.startActivityAsync(
+              "android.settings.LOCATION_SOURCE_SETTINGS" as any
+            );
+          } catch {
+            await Linking.openSettings();
+          }
+        }
+      } else {
+        await Linking.openSettings();
+      }
+    } catch (e) {
+      await Linking.openSettings();
+    } finally {
+      setTimeout(() => {
+        checkGpsServices();
+      }, 1000);
+    }
+  };
+
   /* ---------- FOREGROUND LOCATION ---------- */
 
   const stopForegroundWatcher = () => {
@@ -135,6 +225,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       },
       (location) => {
         setLastLocation(location);
+        checkGpsServices();
       },
     );
   };
@@ -159,9 +250,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   /* ---------- AUTO-RESUME ON APP REOPEN ---------- */
-  //
-  // If the OS killed the app while tracking was active, and the user
-  // reopens the app, automatically restart background tracking.
 
   useEffect(() => {
     if (!user?._id) return;
@@ -174,7 +262,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
         console.log("🔄 Auto-resume: tracking was active before kill, restarting...");
 
-        // Ensure user data is in AsyncStorage for the background task
         await locationService.setCachedUser(user);
 
         const alreadyRunning =
@@ -194,8 +281,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         trackingRef.current = true;
         setIsTracking(true);
         await startForegroundWatcher();
-        startSocketKeepalive(); // keep socket alive in background
-        startWatchdog(); // Start the watchdog after auto-resume
+        startSocketKeepalive();
+        startWatchdog();
+        checkGpsServices();
         console.log("✅ Auto-resume: tracking restored");
       } catch (err) {
         console.error("❌ Auto-resume failed:", err);
@@ -211,23 +299,20 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [user?._id]);
 
   /* ---------- WATCHDOG ---------- */
-  //
-  // Periodically checks if tracking is still running.
-  // On Android with the native foreground service, we check the native
-  // service state (NOT the Expo task, which isn't used in that mode).
-  // On other platforms / Expo fallback, we check the Expo background task.
 
   const startWatchdog = () => {
-    // Clear any existing watchdog
     if (watchdogRef.current) {
       clearInterval(watchdogRef.current);
     }
 
     watchdogRef.current = setInterval(async () => {
-      if (!trackingRef.current) return; // Not supposed to be tracking
+      if (!trackingRef.current) return;
 
       try {
-        // ── Native Android path: check the foreground service directly ──
+        // Check if GPS is turned off on device
+        await checkGpsServices();
+
+        // Check native Android foreground service
         if (locationService.isUsingNativeService()) {
           const nativeRunning = await locationService.isNativeServiceRunning();
           if (!nativeRunning) {
@@ -242,21 +327,18 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
-        // ── Expo fallback path: check the background task ──
+        // Expo fallback path
         const stillRunning =
           await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
 
         if (!stillRunning) {
           console.log("🚨 Watchdog: Expo task stopped unexpectedly, restarting...");
-
-          // Show alert to user
           Alert.alert(
             "⚠️ Tracking Interrupted",
-            "Location tracking was stopped. Restarting automatically to ensure continuous delivery tracking. Please do not dismiss the tracking notification.",
+            "Location tracking was stopped. Restarting automatically to ensure continuous delivery tracking.",
             [{ text: "OK" }],
           );
 
-          // Auto-restart
           try {
             await locationService.startTracking();
             console.log("✅ Watchdog: tracking restarted successfully");
@@ -277,7 +359,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Cleanup watchdog on unmount
   useEffect(() => {
     return () => {
       stopWatchdog();
@@ -301,7 +382,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
-      // ── Run the full 9-step permission + service orchestration ──
       const result = await startLocationSharingFlow({
         _id: user._id,
         name: user.name,
@@ -314,7 +394,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         return;
       }
 
-      // Emit socket status update
       if (socket.connected) {
         socket.emit("riderStatusUpdate", {
           riderId: user._id,
@@ -326,12 +405,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsTracking(true);
       setError(null);
       await startForegroundWatcher();
-
-      // Start the socket keepalive so the connection stays alive in the background
       startSocketKeepalive();
-
-      // Start the watchdog to guard against notification dismissal
       startWatchdog();
+      checkGpsServices();
 
       console.log("✅ Live tracking enabled (foreground service + watchdog active)");
     } catch (err) {
@@ -356,10 +432,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     lockRef.current = true;
 
     try {
-      // Stop watchdog first
       stopWatchdog();
-
-      // Stop the socket keepalive
       stopSocketKeepalive();
 
       await locationService.stopTracking();
@@ -367,6 +440,8 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
 
       trackingRef.current = false;
       setIsTracking(false);
+      setIsLocationDisabled(false);
+      alertEmittedRef.current = false;
 
       if (socket.connected && user?._id) {
         socket.emit("riderStatusUpdate", {
@@ -400,11 +475,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /* ---------- APP STATE: FOREGROUND RECOVERY + MINI-WINDOW ---------- */
-  //
-  // When the app goes to background: show PiP or floating overlay.
-  // When the app returns to foreground: dismiss the mini-window and check
-  // if tracking is still alive. If the OS killed it, restart.
+  /* ---------- APP STATE: FOREGROUND RECOVERY & GPS CHECK ---------- */
 
   useEffect(() => {
     const handleAppStateChange = async (nextState: AppStateStatus) => {
@@ -414,7 +485,6 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
       const goingBackground = nextState.match(/inactive|background/);
       const returningToForeground = nextState === "active" && wasBackground;
 
-      // ── Going to background: show mini-window ────────────────────────────
       if (goingBackground && nextState !== "inactive" && trackingRef.current) {
         try {
           await showMiniWindow();
@@ -426,9 +496,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      // ── Returning to foreground ───────────────────────────────────────────
       if (returningToForeground) {
-        // Dismiss mini-window
         try {
           await hideMiniWindow();
           setIsPiPActive(false);
@@ -437,10 +505,9 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
           console.warn("[LocationContext] hideMiniWindow failed:", e);
         }
 
-        // Check if tracking is still alive
         if (trackingRef.current) {
+          await checkGpsServices();
           try {
-            // ── Native Android path: check the foreground service directly ──
             if (locationService.isUsingNativeService()) {
               const nativeRunning = await locationService.isNativeServiceRunning();
               if (!nativeRunning) {
@@ -449,19 +516,11 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
                 console.log("✅ Native service restarted on foreground return");
               }
             } else {
-              // ── Expo fallback path: check the background task ──
               const stillRunning =
                 await Location.hasStartedLocationUpdatesAsync(LOCATION_TASK_NAME);
 
               if (!stillRunning) {
                 console.log("⚠️ Background task was killed, restarting...");
-
-                Alert.alert(
-                  "⚠️ Tracking Restarted",
-                  "Location tracking was interrupted while in the background. It has been automatically restarted.",
-                  [{ text: "OK" }],
-                );
-
                 await locationService.startTracking();
                 console.log("✅ Background task restarted on foreground return");
               }
@@ -486,11 +545,54 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
     error,
     isPiPActive,
     isOverlayActive,
+    isLocationDisabled,
+    enableLocationServices,
   };
 
   return (
     <LocationContext.Provider value={value}>
       {children}
+
+      {/* MANDATORY ALERT MODAL WHEN GPS IS TURNED OFF DURING ACTIVE TRIP */}
+      <Modal
+        visible={isTracking && isLocationDisabled}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.alertCard}>
+            <View style={styles.alertIconBadge}>
+              <Ionicons name="warning" size={36} color="#DC2626" />
+            </View>
+
+            <Text style={styles.alertTitle}>
+              GPS LOCATION SERVICES REQUIRED
+            </Text>
+
+            <Text style={styles.alertDescription}>
+              Your device location (GPS) has been turned off during an active delivery trip. 
+              Live GPS tracking is mandatory to complete orders and track route progress.
+            </Text>
+
+            <View style={styles.adminWarningBox}>
+              <Ionicons name="shield-half-sharp" size={20} color="#DC2626" />
+              <Text style={styles.adminWarningText}>
+                🚨 Admin Notified: Turning off GPS location during an active trip is logged and reported to the administrator dashboard.
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.enableGpsButton}
+              onPress={enableLocationServices}
+              activeOpacity={0.88}
+            >
+              <Ionicons name="location" size={20} color="#FFFFFF" />
+              <Text style={styles.enableGpsButtonText}>Turn On Location Now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </LocationContext.Provider>
   );
 };
@@ -502,3 +604,88 @@ export const useLocation = (): LocationContextType => {
   }
   return ctx;
 };
+
+const styles = StyleSheet.create({
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  alertCard: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  alertIconBadge: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  alertTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#1E293B",
+    textAlign: "center",
+    marginBottom: 10,
+    letterSpacing: 0.3,
+  },
+  alertDescription: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 16,
+  },
+  adminWarningBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 20,
+  },
+  adminWarningText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#991B1B",
+    lineHeight: 16,
+  },
+  enableGpsButton: {
+    width: "100%",
+    height: 52,
+    backgroundColor: "#DC2626",
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  enableGpsButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+  },
+});

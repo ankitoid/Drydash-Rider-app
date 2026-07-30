@@ -1,22 +1,10 @@
 // app/(rider)/(tabs)/dashboard/index.tsx
-import { useLocation } from "@/context/LocationContext";
-import { useAuth } from "@/context/useAuth";
-import { trackingLegService } from "@/services/trackingLegService";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
-import * as ImagePicker from "expo-image-picker";
-import moment from "moment";
 import React, { useCallback, useEffect, useState } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   Dimensions,
-  FlatList,
   Image,
-  InteractionManager,
   Modal,
   RefreshControl,
   ScrollView,
@@ -26,38 +14,30 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { Skeleton } from "../../../../components/ui/Skeleton";
-import { useTheme } from "../../../../context/ThemeContext";
-import { useFadeSlide } from "../../../../hooks/useFadeSlide";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
+import moment from "moment";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from "expo-image-picker";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 
-const { width, height } = Dimensions.get("window");
-const CARD_WIDTH = width - 48;
-const H_CARD = Math.min(320, width * 0.85);
+import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/useAuth";
+import { useLocation } from "@/context/LocationContext";
+import { useRiderData } from "@/context/RiderDataContext";
+import { VRPStop } from "@/services/api/vrpTripService";
+import { openMapsNavigation } from "@/utils/navigationHelper";
+import { API_V1_BASE_URL } from "@/constants/apiConfig";
+import { setCameraActive, openOverlaySettingsDirectly } from "@/services/OverlayManager";
 
-const PICKUP_API_BASE = "https://api.shiptos.com/api/v1/rider";
-const ORDERS_API_BASE = "https://api.shiptos.com/api/v1";
-
-type Order = {
-  id: string;
-  kind: "pickup" | "delivery";
-  priority: number;
-  time: string;
-  status: "Active" | "Pending" | "Delivered";
-  name?: string;
-  address?: string;
-  contact?: string;
-  to?: string;
-  from?: string;
-  lat?: number | null;
-  lng?: number | null;
-  price?: string;
-  distance?: string;
-};
+const { height } = Dimensions.get("window");
 
 export default function Dashboard() {
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { user } = useAuth();
-  console.log("user info---> ", user);
+  const { activeTrip, refreshActiveTrip } = useRiderData();
+
+  // Location context tracking state
   const {
     isTracking,
     toggleTracking,
@@ -65,45 +45,63 @@ export default function Dashboard() {
     error: locationError,
   } = useLocation();
 
+  // Dashboard UI states
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+
+  // Tracking Setup Guide Modal state
+  const [showTrackingGuide, setShowTrackingGuide] = useState<boolean>(false);
+  const [isSavingGuide, setIsSavingGuide] = useState<boolean>(false);
+
+  // Odometer / Trip Modal states
+  const [showTripModal, setShowTripModal] = useState<boolean>(false);
   const [tripId, setTripId] = useState<string | null>(null);
-  const [startKm, setStartKm] = useState("");
-  const [endKm, setEndKm] = useState("");
+  const [startKm, setStartKm] = useState<string>("");
+  const [endKm, setEndKm] = useState<string>("");
   const [startImage, setStartImage] =
     useState<ImagePicker.ImagePickerAsset | null>(null);
-  const [endImage, setEndImage] = useState<ImagePicker.ImagePickerAsset | null>(
-    null,
-  );
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [showTrackingGuide, setShowTrackingGuide] = useState(false);
-  const [isSavingGuide, setIsSavingGuide] = useState(false);
+  const [endImage, setEndImage] =
+    useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [isStartingTrip, setIsStartingTrip] = useState<boolean>(false);
+  const [isEndingTrip, setIsEndingTrip] = useState<boolean>(false);
+  const [isCompressing, setIsCompressing] = useState<boolean>(false);
 
-  const [fulfilledCount, setFulfilledCount] = useState<number>(0);
-  const [deliveredCount, setDeliveredCount] = useState<number>(0);
-  const [dailyKm, setDailyKm] = useState<number>(0);
-  const [totalKm, setTotalKm] = useState<number>(0);
+  // Realtime clock interval
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
-  // Modal states
-  const [showTripModal, setShowTripModal] = useState(false);
-  const [isStartingTrip, setIsStartingTrip] = useState(false);
-  const [isEndingTrip, setIsEndingTrip] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false);
-  const [isTogglingTracking, setIsTogglingTracking] = useState(false);
+  // Fetch active trip from rider data context
+  const fetchTripData = useCallback(async () => {
+    if (user?._id) {
+      await refreshActiveTrip(user._id, user.email);
+    }
+  }, [user?._id, user?.email, refreshActiveTrip]);
 
+  useEffect(() => {
+    fetchTripData();
+  }, [fetchTripData]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchTripData();
+    await restoreOpenTrip();
+    setRefreshing(false);
+  };
+
+  // Restore open Odometer trip if exists
   const restoreOpenTrip = useCallback(async () => {
     try {
       if (!user?._id) return;
 
-      const res = await fetch(`${ORDERS_API_BASE}/trips/active/${user._id}`);
-      if (!res.ok) {
-        console.warn("restoreOpenTrip: failed", res.status);
-        return;
-      }
+      const res = await fetch(`${API_V1_BASE_URL}/trips/active/${user._id}`);
+      if (!res.ok) return;
+
       const json = await res.json();
       if (json.hasActiveTrip && json.trip) {
         setTripId(json.trip._id);
         setStartKm(String(json.trip.startKm));
-
         if (json.trip.startImage) {
           setStartImage({
             uri: json.trip.startImage,
@@ -122,271 +120,11 @@ export default function Dashboard() {
     }
   }, [user?._id]);
 
-  const fetchKilometersData = useCallback(async () => {
-    try {
-      if (!user?._id) return;
+  useEffect(() => {
+    restoreOpenTrip();
+  }, [restoreOpenTrip]);
 
-      const today = getLocalYYYYMMDD();
-      const dailyRes = await fetch(
-        `${ORDERS_API_BASE}/trips/daily/${user._id}?date=${today}`,
-      );
-
-      const taskDistanceKm = await trackingLegService.getTodayDistanceKm();
-      let serverTaskDistanceKm = 0;
-      const taskTrackingRes = await fetch(
-        `${ORDERS_API_BASE}/location/tracking/rider/${user._id}/daily?date=${today}`,
-      );
-      if (taskTrackingRes.ok) {
-        const taskTrackingJson = await taskTrackingRes.json();
-        serverTaskDistanceKm =
-          taskTrackingJson?.summary?.totalDistanceKm || 0;
-      }
-      let serverDailyKm = 0;
-      if (dailyRes.ok) {
-        const dailyJson = await dailyRes.json();
-        serverDailyKm = dailyJson.totalDailyDistance || 0;
-      }
-      setDailyKm(
-        Number(
-          (
-            serverDailyKm + Math.max(taskDistanceKm, serverTaskDistanceKm)
-          ).toFixed(2),
-        ),
-      );
-
-      const totalRes = await fetch(
-        `${ORDERS_API_BASE}/trips/custom-summary/${user._id}`,
-      );
-
-      if (totalRes.ok) {
-        const totalJson = await totalRes.json();
-        setTotalKm(totalJson.userTotalKm || 0);
-      }
-    } catch (err) {
-      console.warn("Error fetching kilometers data:", err);
-    }
-  }, [user?._id]);
-
-  const getLocalYYYYMMDD = () => {
-    return moment().format("YYYY-MM-DD");
-  };
-
-  const fetchRiderTasks = useCallback(
-    async (date?: string) => {
-      try {
-        if (!user?._id) return;
-        const d = date || getLocalYYYYMMDD();
-        const url = `${PICKUP_API_BASE}/rider-tasks/${user._id}?date=${encodeURIComponent(d)}`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          console.warn("fetchRiderTasks failed:", res.status);
-          return;
-        }
-        const json = await res.json();
-        const summary = json.summary || {};
-
-        setFulfilledCount(Number(summary.totalCompletedPickups ?? 0));
-        setDeliveredCount(Number(summary.totalCompletedDeliveries ?? 0));
-      } catch (err) {
-        console.warn("Error fetching rider tasks:", err);
-      }
-    },
-    [user?._id],
-  );
-
-  const kpi = useFadeSlide(0, 20);
-
-  const compressImage = async (image: ImagePicker.ImagePickerAsset) => {
-    try {
-      setIsCompressing(true);
-
-      const originalSize = image.fileSize || 0;
-
-      // Compress image with expo-image-manipulator
-      const manipResult = await manipulateAsync(
-        image.uri,
-        [{ resize: { width: 900 } }],
-        {
-          compress: 0.5,
-          format: SaveFormat.JPEG, // Convert to JPEG
-        },
-      );
-
-      const compressedSize =
-        manipResult.width * (manipResult.height || 600) * 0.5;
-      const savedPercentage = originalSize
-        ? Math.round(((originalSize - compressedSize) / originalSize) * 100)
-        : 0;
-
-      console.log(`Image compressed: ${savedPercentage}% size reduction`);
-
-      return {
-        uri: manipResult.uri,
-        width: manipResult.width,
-        height: manipResult.height,
-        fileSize: compressedSize,
-      };
-    } catch (error) {
-      console.error("Image compression error:", error);
-      // Return original if compression fails
-      return image;
-    } finally {
-      setIsCompressing(false);
-    }
-  };
-
-  const clickPhoto = async (setter: any) => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission Required",
-        "Camera access is required to capture odometer photos",
-      );
-      return;
-    }
-
-    const res = await ImagePicker.launchCameraAsync({
-      quality: 0.4,
-      cameraType: ImagePicker.CameraType.back,
-      allowsEditing: false,
-    });
-
-    if (!res.canceled && res.assets?.length) {
-      const original = res.assets[0];
-
-      setter(original);
-
-      compressImage(original).then((compressed) => {
-        setter(compressed);
-      });
-    }
-  };
-
-  const handleStartTrip = async () => {
-    if (!startKm || !startImage || !user?._id) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter start KM and capture odometer photo",
-      );
-      return;
-    }
-
-    setIsStartingTrip(true);
-
-    const form = new FormData();
-    form.append("riderId", user._id);
-    form.append("startKm", startKm);
-    form.append("image", {
-      uri: startImage.uri,
-      name: "start.jpg",
-      type: "image/jpeg",
-    } as any);
-
-    try {
-      const res = await fetch(`${ORDERS_API_BASE}/trips/start`, {
-        method: "POST",
-        body: form,
-      });
-
-      const json = await res.json();
-
-      if (res.ok) {
-        setTripId(json.trip._id);
-        setShowTripModal(false);
-        Alert.alert("Trip Started", "Your trip has been started successfully!");
-        fetchKilometersData();
-        if (!isTracking) {
-          await toggleTracking();
-        }
-      } else {
-        Alert.alert("Error", json.message || "Failed to start trip");
-      }
-    } catch (error) {
-      Alert.alert("Error", "Network error. Please try again.");
-    } finally {
-      setIsStartingTrip(false);
-    }
-  };
-
-  const handleEndTrip = async () => {
-    if (!endKm || !endImage || !tripId) {
-      Alert.alert(
-        "Missing Information",
-        "Please enter end KM and capture odometer photo",
-      );
-      return;
-    }
-
-    setIsEndingTrip(true);
-
-    const form = new FormData();
-    form.append("endKm", endKm);
-    form.append("image", {
-      uri: endImage.uri,
-      name: "end.jpg",
-      type: "image/jpeg",
-    } as any);
-
-    try {
-      const res = await fetch(`${ORDERS_API_BASE}/trips/${tripId}/end`, {
-        method: "PUT",
-        body: form,
-      });
-
-      const json = await res.json();
-
-      if (res.ok) {
-        Alert.alert(
-          "Trip Completed",
-          `Distance covered: ${json.trip.distance} km\n\nGreat work!`,
-        );
-        setTripId(null);
-        setStartKm("");
-        setEndKm("");
-        setStartImage(null);
-        setEndImage(null);
-        setShowTripModal(false);
-        fetchKilometersData();
-        if (isTracking) {
-          await toggleTracking();
-        }
-      } else {
-        Alert.alert("Error", json.message || "Failed to end trip");
-      }
-    } catch (error) {
-      Alert.alert("Error", "Network error. Please try again.");
-    } finally {
-      setIsEndingTrip(false);
-    }
-  };
-
-  const confirmToggle = () => {
-    Alert.alert(
-      "Task Navigation",
-      "KM tracking starts from the Start Navigation button inside each pickup or delivery task.",
-    );
-  };
-
-  const handleToggleTracking = async () => {
-  try {
-    setIsTogglingTracking(true);
-    await toggleTracking();
-  } catch (error) {
-    console.warn("toggleTracking failed:", error);
-    Alert.alert(
-      "Tracking Error",
-      "We could not update location sharing right now. Please try again.",
-    );
-  } finally {
-    setIsTogglingTracking(false);
-  }
-};
-
-  const openReturnToPlant = () => {
-    router.push("/(rider)/order/return-to-plant" as any);
-  };
-
+  // Check tracking setup guide status
   const trackingGuideKey = user?._id
     ? `tracking_setup_seen_${user._id}`
     : null;
@@ -396,7 +134,6 @@ export default function Dashboard() {
 
     const checkTrackingGuide = async () => {
       if (!trackingGuideKey) return;
-
       try {
         const seen = await AsyncStorage.getItem(trackingGuideKey);
         if (!cancelled && seen !== "true") {
@@ -408,7 +145,6 @@ export default function Dashboard() {
     };
 
     checkTrackingGuide();
-
     return () => {
       cancelled = true;
     };
@@ -427,74 +163,348 @@ export default function Dashboard() {
     }
   };
 
+  // Photo Capture & Compression for Odometer with Camera Active flag (prevents PiP fluctuation)
+  const compressImage = async (image: ImagePicker.ImagePickerAsset) => {
+    try {
+      setIsCompressing(true);
+      const originalSize = image.fileSize || 0;
+
+      const manipResult = await manipulateAsync(
+        image.uri,
+        [{ resize: { width: 900 } }],
+        {
+          compress: 0.5,
+          format: SaveFormat.JPEG,
+        }
+      );
+
+      const compressedSize =
+        manipResult.width * (manipResult.height || 600) * 0.5;
+      const savedPercentage = originalSize
+        ? Math.round(((originalSize - compressedSize) / originalSize) * 100)
+        : 0;
+
+      console.log(`Image compressed: ${savedPercentage}% size reduction`);
+
+      return {
+        uri: manipResult.uri,
+        width: manipResult.width,
+        height: manipResult.height,
+        fileSize: compressedSize,
+      };
+    } catch (error) {
+      console.error("Image compression error:", error);
+      return image;
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
+  const clickPhoto = async (setter: any) => {
+    try {
+      // Set camera active flag to suppress PiP/Overlay during camera launch
+      setCameraActive(true);
+
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Camera access is required to capture odometer photos"
+        );
+        return;
+      }
+
+      const res = await ImagePicker.launchCameraAsync({
+        quality: 0.4,
+        cameraType: ImagePicker.CameraType.back,
+        allowsEditing: false,
+      });
+
+      if (!res.canceled && res.assets?.length) {
+        const original = res.assets[0];
+        setter(original);
+        compressImage(original).then((compressed) => {
+          setter(compressed);
+        });
+      }
+    } catch (err) {
+      console.warn("Camera launch error:", err);
+    } finally {
+      // Reset camera active flag after a delay to ensure app state transition settles
+      setTimeout(() => {
+        setCameraActive(false);
+      }, 1500);
+    }
+  };
+
+  // Odometer Start/End Handlers (automatically triggers Location Tracking)
+  const handleStartTrip = async () => {
+    if (!startKm || !startImage || !user?._id) {
+      Alert.alert(
+        "Missing Information",
+        "Please enter start KM and capture odometer photo"
+      );
+      return;
+    }
+
+    setIsStartingTrip(true);
+    const form = new FormData();
+    form.append("riderId", user._id);
+    form.append("startKm", startKm);
+    form.append("image", {
+      uri: startImage.uri,
+      name: "start.jpg",
+      type: "image/jpeg",
+    } as any);
+
+    try {
+      const res = await fetch(`${API_V1_BASE_URL}/trips/start`, {
+        method: "POST",
+        body: form,
+      });
+
+      const json = await res.json();
+      if (res.ok) {
+        setTripId(json.trip?._id || json._id);
+        setShowTripModal(false);
+
+        // Automatically start live location tracking when odometer trip is started
+        if (!isTracking) {
+          await toggleTracking();
+        }
+
+        Alert.alert(
+          "Trip Started",
+          "Odometer trip started & live location tracking activated!"
+        );
+      } else {
+        Alert.alert("Error", json.message || "Failed to start trip");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setIsStartingTrip(false);
+    }
+  };
+
+  const handleEndTrip = async () => {
+    if (!endKm || !endImage || !tripId) {
+      Alert.alert(
+        "Missing Information",
+        "Please enter end KM and capture odometer photo"
+      );
+      return;
+    }
+
+    setIsEndingTrip(true);
+    const form = new FormData();
+    form.append("endKm", endKm);
+    form.append("image", {
+      uri: endImage.uri,
+      name: "end.jpg",
+      type: "image/jpeg",
+    } as any);
+
+    try {
+      const res = await fetch(`${API_V1_BASE_URL}/trips/${tripId}/end`, {
+        method: "PUT",
+        body: form,
+      });
+
+      const json = await res.json();
+      if (res.ok) {
+        // Automatically stop live location tracking when odometer trip is ended
+        if (isTracking) {
+          await toggleTracking();
+        }
+
+        Alert.alert(
+          "Trip Completed",
+          `Distance covered: ${json.trip?.distance || 0} km\n\nLive location tracking stopped. Great work!`
+        );
+        setTripId(null);
+        setStartKm("");
+        setEndKm("");
+        setStartImage(null);
+        setEndImage(null);
+        setShowTripModal(false);
+      } else {
+        Alert.alert("Error", json.message || "Failed to end trip");
+      }
+    } catch (error) {
+      Alert.alert("Error", "Network error. Please try again.");
+    } finally {
+      setIsEndingTrip(false);
+    }
+  };
+
+  const handleStartWorkflow = (stop: VRPStop) => {
+    if (stop.type === "depot") return;
+    const targetId = stop.id || (stop as any)._id || "";
+    if (stop.type === "pickup") {
+      router.push({
+        pathname: "/(rider)/order/pickup/[orderId]",
+        params: { orderId: targetId },
+      });
+    } else {
+      router.push({
+        pathname: "/(rider)/order/delivered/[orderId]",
+        params: { orderId: targetId },
+      });
+    }
+  };
+
+  const getTimeIndicator = (date: Date) => {
+    const hour = date.getHours();
+    if (hour >= 5 && hour < 12) {
+      return { label: "Morning", icon: "sunny-outline", color: "#F59E0B" };
+    } else if (hour >= 12 && hour < 17) {
+      return { label: "Afternoon", icon: "sunny", color: "#F97316" };
+    } else if (hour >= 17 && hour < 20) {
+      return { label: "Evening", icon: "partly-sunny-outline", color: "#E11D48" };
+    } else {
+      return { label: "Night", icon: "moon-outline", color: "#6366F1" };
+    }
+  };
+
+  const timeInfo = getTimeIndicator(currentTime);
+
+  const isStopCompleted = (s: VRPStop) =>
+    s.status === "completed" || s.completed === true;
+  const nonDepotStops =
+    activeTrip?.stops?.filter((s) => s.type !== "depot") || [];
+  const currentTask =
+    nonDepotStops.find((s) => !isStopCompleted(s)) || nonDepotStops[0];
+  const taskIsDone = currentTask ? isStopCompleted(currentTask) : false;
+
+  // Professional, Compact Location Tracking & Trip Control Card
   const renderLocationStatus = () => (
-    <View style={styles.locationStatusContainer}>
-      <TouchableOpacity
-        style={[
-          styles.locationStatusBadge,
-          {
-            backgroundColor: "#10B981",
-            borderColor: theme.border,
-          },
-        ]}
-        onPress={confirmToggle}
-        activeOpacity={0.8}
-      >
-        <View style={styles.statusIndicator}>
+    <View
+      style={[
+        styles.trackingCard,
+        { backgroundColor: theme.card, borderColor: theme.border },
+      ]}
+    >
+      {/* Header Row: Title & Small Status Badge */}
+      <View style={styles.cardHeaderRow}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="speedometer-outline" size={18} color={theme.primary} />
+          <Text style={[styles.cardTitleText, { color: theme.text }]}>
+            Odometer & Location
+          </Text>
+        </View>
+
+        {/* Small Status Pill */}
+        <View
+          style={[
+            styles.smallStatusPill,
+            {
+              backgroundColor: isTracking ? "#10B98118" : (isDark ? "#334155" : "#F1F5F9"),
+              borderColor: isTracking ? "#10B98140" : theme.border,
+            },
+          ]}
+        >
           <View
             style={[
-              styles.statusDot,
-              { backgroundColor: "#10B981" },
+              styles.smallStatusDot,
+              { backgroundColor: isTracking ? "#10B981" : "#94A3B8" },
             ]}
           />
+          <Text
+            style={[
+              styles.smallStatusText,
+              { color: isTracking ? "#059669" : theme.subText },
+            ]}
+          >
+            {isTracking ? "Tracking Active" : "Tracking Off"}
+          </Text>
         </View>
-        <Text style={styles.statusText}>TASK NAVIGATION</Text>
-      </TouchableOpacity>
+      </View>
 
-      <TouchableOpacity
+      {/* Main Odometer Trip Action Box */}
+      <View
         style={[
-          styles.trackingButton,
-          isTracking ? styles.trackingButtonStop : styles.trackingButtonStart,
-          isTogglingTracking && styles.trackingButtonDisabled,
+          styles.tripActionBox,
+          {
+            backgroundColor: tripId
+              ? (isDark ? "#1E293B" : "#F8FAFC")
+              : (isDark ? "#0F172A" : "#FAFAFA"),
+            borderColor: tripId ? "#10B98160" : theme.border,
+          },
         ]}
-        onPress={handleToggleTracking}
-        activeOpacity={0.9}
-        disabled={isTogglingTracking}
       >
-        {isTogglingTracking ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
+        <View
+          style={[
+            styles.tripIconCircle,
+            { backgroundColor: tripId ? "#10B9811A" : theme.primary + "1A" },
+          ]}
+        >
           <Ionicons
-            name={isTracking ? "stop-circle-outline" : "location-outline"}
-            size={18}
-            color="#fff"
+            name={tripId ? "bicycle" : "navigate-circle"}
+            size={24}
+            color={tripId ? "#10B981" : theme.primary}
           />
-        )}
-        <Text style={styles.trackingButtonText}>
-          {isTracking ? "Stop Location Sharing" : "Start Location Sharing"}
-        </Text>
-      </TouchableOpacity>
+        </View>
 
-      <TouchableOpacity
-        style={styles.setupLinkButton}
-        onPress={() => router.push("/(rider)/settings/location" as any)}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="settings-outline" size={16} color={theme.primary} />
-        <Text style={[styles.setupLinkText, { color: theme.primary }]}>
-          Open Tracking Setup
-        </Text>
-      </TouchableOpacity>
+        <View style={styles.tripActionInfo}>
+          <Text style={[styles.tripActionTitle, { color: theme.text }]}>
+            {tripId ? "Active Odometer Trip" : "Start Odometer Trip"}
+          </Text>
+          <Text style={[styles.tripActionSub, { color: theme.subText }]}>
+            {tripId
+              ? `Start KM: ${startKm || "Recorded"} • Tap to end`
+              : "Record odometer & start live GPS"}
+          </Text>
+        </View>
 
-      {lastLocation && (
-        <Text style={[styles.lastUpdateText, { color: theme.subText }]}>
-          Last update:{" "}
-          {new Date(lastLocation.timestamp).toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </Text>
-      )}
+        <TouchableOpacity
+          style={[
+            styles.tripActionButton,
+            { backgroundColor: tripId ? "#EF4444" : "#10B981" },
+          ]}
+          onPress={() => setShowTripModal(true)}
+          activeOpacity={0.85}
+        >
+          <Ionicons
+            name={tripId ? "stop-circle-outline" : "play-outline"}
+            size={16}
+            color="#FFFFFF"
+          />
+          <Text style={styles.tripActionButtonText}>
+            {tripId ? "End Trip" : "Start Trip"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Footer Info Row */}
+      <View style={styles.cardFooterRow}>
+        <View style={styles.gpsRow}>
+          <Ionicons
+            name="radio-outline"
+            size={13}
+            color={isTracking ? "#10B981" : theme.subText}
+          />
+          <Text style={[styles.lastUpdateText, { color: theme.subText }]}>
+            {lastLocation
+              ? `GPS: ${moment(lastLocation.timestamp).format("hh:mm:ss A")}`
+              : isTracking
+              ? "Syncing location..."
+              : "GPS ready"}
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.setupLinkBtn}
+          onPress={() => router.push("/(rider)/settings/location" as any)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="settings-outline" size={13} color={theme.subText} />
+          <Text style={[styles.setupLinkBtnText, { color: theme.subText }]}>
+            Setup
+          </Text>
+        </TouchableOpacity>
+      </View>
 
       {locationError && (
         <Text style={styles.errorText}>⚠️ {locationError}</Text>
@@ -502,108 +512,131 @@ export default function Dashboard() {
     </View>
   );
 
-  const renderTrackingGuide = () => (
-    <Modal
-      visible={showTrackingGuide}
-      transparent
-      animationType="fade"
-      onRequestClose={() => setShowTrackingGuide(false)}
-    >
-      <View style={styles.guideOverlay}>
-        <View style={[styles.guideCard, { backgroundColor: theme.card }]}>
-          <View style={styles.guideHeader}>
-            <View style={[styles.guideIcon, { backgroundColor: "#10B98118" }]}>
-              <Ionicons name="shield-checkmark" size={22} color="#10B981" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.guideTitle, { color: theme.text }]}>
-                Keep live tracking running
-              </Text>
-              <Text style={[styles.guideSub, { color: theme.subText }]}>
-                One-time phone setup for Android 13 and Vivo / iQOO.
-              </Text>
-            </View>
-          </View>
+  // One-time Tracking Setup Guide Modal
+  // const renderTrackingGuide = () => (
+  //   <Modal
+  //     visible={showTrackingGuide}
+  //     transparent
+  //     animationType="fade"
+  //     onRequestClose={() => setShowTrackingGuide(false)}
+  //   >
+  //     <View style={styles.guideOverlay}>
+  //       <View style={[styles.guideCard, { backgroundColor: theme.card }]}>
+  //         <View style={styles.guideHeader}>
+  //           <View style={[styles.guideIcon, { backgroundColor: "#10B98118" }]}>
+  //             <Ionicons name="shield-checkmark" size={22} color="#10B981" />
+  //           </View>
+  //           <View style={{ flex: 1 }}>
+  //             <Text style={[styles.guideTitle, { color: theme.text }]}>
+  //               Keep live tracking running
+  //             </Text>
+  //             <Text style={[styles.guideSub, { color: theme.subText }]}>
+  //               One-time phone setup for Android 13 and Vivo / iQOO devices.
+  //             </Text>
+  //           </View>
+  //         </View>
 
-          <View style={styles.guideStepRow}>
-            <View style={styles.guideBullet} />
-            <Text style={[styles.guideStepText, { color: theme.subText }]}>
-              Open Tracking Setup from Profile and allow location "All the time".
-            </Text>
-          </View>
-          <View style={styles.guideStepRow}>
-            <View style={styles.guideBullet} />
-            <Text style={[styles.guideStepText, { color: theme.subText }]}>
-              Set battery for this app to Unrestricted / Don't optimize.
-            </Text>
-          </View>
-          <View style={styles.guideStepRow}>
-            <View style={styles.guideBullet} />
-            <Text style={[styles.guideStepText, { color: theme.subText }]}>
-              On Vivo / iQOO, also allow Auto-start or App launch if it appears.
-            </Text>
-          </View>
-          <View style={styles.guideStepRow}>
-            <View style={styles.guideBullet} />
-            <Text style={[styles.guideStepText, { color: theme.subText }]}>
-              Start sharing from Dashboard and keep the notification visible.
-            </Text>
-          </View>
+  //         <View style={styles.guideStepRow}>
+  //           <View style={styles.guideBullet} />
+  //           <Text style={[styles.guideStepText, { color: theme.subText }]}>
+  //             Open Tracking Setup from Profile and allow location "All the time".
+  //           </Text>
+  //         </View>
+  //         <View style={styles.guideStepRow}>
+  //           <View style={styles.guideBullet} />
+  //           <Text style={[styles.guideStepText, { color: theme.subText }]}>
+  //             Set battery for this app to Unrestricted / Don't optimize.
+  //           </Text>
+  //         </View>
+  //         <View style={styles.guideStepRow}>
+  //           <View style={styles.guideBullet} />
+  //           <Text style={[styles.guideStepText, { color: theme.subText }]}>
+  //             On Vivo / iQOO, also allow Auto-start or App launch if it appears.
+  //           </Text>
+  //         </View>
+  //         <View style={styles.guideStepRow}>
+  //           <View style={styles.guideBullet} />
+  //           <Text style={[styles.guideStepText, { color: theme.subText }]}>
+  //             Allow "Display Over Other Apps" permission for floating mini tracking window.
+  //           </Text>
+  //         </View>
 
-          <View style={styles.guideActions}>
-            <TouchableOpacity
-              style={[styles.guideAction, { borderColor: theme.border }]}
-              onPress={() => router.push("/(rider)/settings/location" as any)}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="settings-outline" size={18} color={theme.text} />
-              <Text style={[styles.guideActionText, { color: theme.text }]}>
-                Open Setup
-              </Text>
-            </TouchableOpacity>
+  //         <TouchableOpacity
+  //           style={[
+  //             styles.guideAction,
+  //             { borderColor: theme.primary, backgroundColor: theme.primary + "10", marginBottom: 12 },
+  //           ]}
+  //           onPress={openOverlaySettingsDirectly}
+  //           activeOpacity={0.85}
+  //         >
+  //           <Ionicons name="layers-outline" size={18} color={theme.primary} />
+  //           <Text style={[styles.guideActionText, { color: theme.primary }]}>
+  //             Allow Display Over Other Apps
+  //           </Text>
+  //         </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.guidePrimary, { backgroundColor: "#10B981" }]}
-              onPress={dismissTrackingGuide}
-              activeOpacity={0.85}
-              disabled={isSavingGuide}
-            >
-              {isSavingGuide ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark" size={18} color="#fff" />
-                  <Text style={styles.guidePrimaryText}>Got it</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+  //         <View style={styles.guideActions}>
+  //           <TouchableOpacity
+  //             style={[styles.guideAction, { borderColor: theme.border }]}
+  //             onPress={() => {
+  //               setShowTrackingGuide(false);
+  //               router.push("/(rider)/settings/location" as any);
+  //             }}
+  //             activeOpacity={0.85}
+  //           >
+  //             <Ionicons name="settings-outline" size={18} color={theme.text} />
+  //             <Text style={[styles.guideActionText, { color: theme.text }]}>
+  //               Open Setup
+  //             </Text>
+  //           </TouchableOpacity>
 
+  //           <TouchableOpacity
+  //             style={[styles.guidePrimary, { backgroundColor: "#10B981" }]}
+  //             onPress={dismissTrackingGuide}
+  //             activeOpacity={0.85}
+  //             disabled={isSavingGuide}
+  //           >
+  //             {isSavingGuide ? (
+  //               <ActivityIndicator color="#fff" />
+  //             ) : (
+  //               <>
+  //                 <Ionicons name="checkmark" size={18} color="#fff" />
+  //                 <Text style={styles.guidePrimaryText}>Got it</Text>
+  //               </>
+  //             )}
+  //           </TouchableOpacity>
+  //         </View>
+  //       </View>
+  //     </View>
+  //   </Modal>
+  // );
+
+  // Odometer Start/End Trip Modal
   const renderTripModal = () => (
     <Modal
       visible={showTripModal}
       animationType="slide"
       transparent={true}
+      statusBarTranslucent={true}
       onRequestClose={() => setShowTripModal(false)}
     >
       <View style={styles.modalOverlay}>
-        <View
-          style={[styles.modalContent, { backgroundColor: theme.background }]}
-        >
+        <TouchableOpacity
+          // style={{ flex: 1, width: "100%" }}
+          activeOpacity={1}
+          onPress={() => setShowTripModal(false)}
+        />
+        <View style={[styles.modalContent, { backgroundColor: theme.card }]}>
           {/* Header */}
-          <View style={styles.modalHeader}>
-            <View>
+          <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
+            <View style={{ flex: 1 }}>
               <Text style={[styles.modalTitle, { color: theme.text }]}>
-                {tripId ? "End Trip" : "Start Trip"}
+                {tripId ? "End Odometer Trip" : "Start Odometer Trip"}
               </Text>
               <Text style={[styles.modalSubtitle, { color: theme.subText }]}>
                 {tripId
-                  ? "Record your final odometer reading"
-                  : "Record your starting odometer reading"}
+                  ? "Record final odometer reading & stop location tracking"
+                  : "Record starting odometer reading & start location tracking"}
               </Text>
             </View>
             <TouchableOpacity
@@ -614,7 +647,11 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 32 }}
+          >
             {/* Odometer Input */}
             <View style={styles.inputSection}>
               <Text style={[styles.inputLabel, { color: theme.text }]}>
@@ -623,7 +660,7 @@ export default function Dashboard() {
               <View
                 style={[
                   styles.inputWrapper,
-                  { borderColor: theme.border, backgroundColor: theme.card },
+                  { borderColor: theme.border, backgroundColor: theme.background },
                 ]}
               >
                 <Ionicons
@@ -691,7 +728,7 @@ export default function Dashboard() {
                 <TouchableOpacity
                   style={[
                     styles.photoButton,
-                    { borderColor: theme.border, backgroundColor: theme.card },
+                    { borderColor: theme.border, backgroundColor: theme.background },
                   ]}
                   onPress={() =>
                     clickPhoto(tripId ? setEndImage : setStartImage)
@@ -753,7 +790,7 @@ export default function Dashboard() {
                       color="#fff"
                     />
                     <Text style={styles.submitButtonText}>
-                      {tripId ? "End Trip" : "Start Trip"}
+                      {tripId ? "End Trip & Stop Tracking" : "Start Trip & Track Location"}
                     </Text>
                   </>
                 )}
@@ -765,380 +802,705 @@ export default function Dashboard() {
     </Modal>
   );
 
-  useEffect(() => {
-    if (!user?.email) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const fetchData = async () => {
-      if (cancelled) return;
-      await Promise.all([
-        restoreOpenTrip(),
-        fetchRiderTasks(),
-        fetchKilometersData(),
-      ]);
-    };
-
-    const task = InteractionManager.runAfterInteractions(() => {
-      timer = setTimeout(fetchData, 250);
-    });
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-      task.cancel();
-    };
-  }, [user?.email, fetchRiderTasks, fetchKilometersData, restoreOpenTrip]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await Promise.all([
-      restoreOpenTrip(),
-      fetchRiderTasks(),
-      fetchKilometersData(),
-    ]);
-    setRefreshing(false);
-  };
-
-  useEffect(() => {
-    return () => { };
-  }, []);
-
-  if (loading) {
-    return (
-      <ScrollView
-        style={[styles.container, { backgroundColor: theme.background }]}
-        contentContainerStyle={{ paddingTop: 18, paddingBottom: 120 }}
-      >
-        <View style={styles.topRow}>
-          <Skeleton
-            height={64}
-            radius={12}
-            style={{ width: CARD_WIDTH * 0.62 }}
-          />
-          <Skeleton height={40} radius={12} style={{ width: 80 }} />
-        </View>
-        <View style={{ paddingHorizontal: 16 }}>
-          <Skeleton height={H_CARD} radius={14} style={{ marginTop: 12 }} />
-        </View>
-      </ScrollView>
-    );
-  }
-
   return (
-    <>
-      <FlatList
-        style={{ flex: 1, backgroundColor: theme.background }}
-        data={[]}
-        keyExtractor={() => "dashboard-header"}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={theme.primary}
-          />
-        }
-        ListHeaderComponent={
-          <>
-            {/* Location Status */}
-            {renderLocationStatus()}
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          tintColor={theme.primary}
+        />
+      }
+    >
+      {/* GREETING & REALTIME TIME CARD FROM FIGMA */}
+      <View
+        style={[
+          styles.greetingCard,
+          {
+            backgroundColor: theme.card,
+            borderColor: theme.border,
+          },
+        ]}
+      >
+        <View style={styles.greetingHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.greetingTitle, { color: theme.text }]}>
+              Hello, {user?.name || "Rider"}
+            </Text>
 
-            {/* KPI Cards */}
-            <Animated.View
-              style={[
-                styles.kpiContainer,
-                {
-                  opacity: kpi.opacity,
-                  transform: [{ translateY: kpi.translateY }],
-                },
-              ]}
-            >
-              <KpiCard
-                title="FULFILLED"
-                value={String(fulfilledCount)}
-                theme={theme}
+            {/* REALTIME CLOCK & SUN/MOON INDICATOR */}
+            <View style={styles.clockRow}>
+              <Ionicons
+                name={timeInfo.icon as any}
+                size={16}
+                color={timeInfo.color}
               />
-              <KpiCard
-                title="DELIVERED"
-                value={String(deliveredCount)}
-                theme={theme}
-              />
-            </Animated.View>
-
-            <Animated.View
-              style={[
-                styles.kpiContainer,
-                {
-                  opacity: kpi.opacity,
-                  transform: [{ translateY: kpi.translateY }],
-                },
-              ]}
-            >
-              <KpiCard title="KM TODAY" value={`${dailyKm} km`} theme={theme} />
-              <KpiCard title="TOTAL KM" value={`${totalKm} km`} theme={theme} />
-            </Animated.View>
-
-            <View style={styles.returnPlantContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.returnPlantButton,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-                onPress={openReturnToPlant}
-                activeOpacity={0.86}
-              >
-                <View
-                  style={[
-                    styles.returnPlantIcon,
-                    { backgroundColor: theme.primary + "18" },
-                  ]}
-                >
-                  <Ionicons name="business-outline" size={22} color={theme.primary} />
-                </View>
-                <View style={styles.returnPlantTextWrap}>
-                  <Text style={[styles.returnPlantTitle, { color: theme.text }]}>
-                    Return to Plant
-                  </Text>
-                  <Text style={[styles.returnPlantSub, { color: theme.subText }]}>
-                    Count KM only if you navigate back
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={theme.subText} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Trip Tracker Card */}
-            <View style={styles.tripTrackerContainer}>
+              <Text style={[styles.clockText, { color: theme.text }]}>
+                {moment(currentTime).format("hh:mm:ss A")}
+              </Text>
               <View
                 style={[
-                  styles.tripTrackerCard,
-                  { backgroundColor: theme.card, borderColor: theme.border },
+                  styles.timeTag,
+                  { backgroundColor: `${timeInfo.color}15` },
                 ]}
               >
-                <View style={styles.tripTrackerHeader}>
-                  <View
-                    style={[
-                      styles.tripIconWrapper,
-                      { backgroundColor: theme.primary + "15" },
-                    ]}
-                  >
-                    <Ionicons
-                      name="speedometer"
-                      size={24}
-                      color={theme.primary}
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text
-                      style={[styles.tripTrackerTitle, { color: theme.text }]}
-                    >
-                      Daily Trip Tracker
-                    </Text>
-                    <Text
-                      style={[
-                        styles.tripTrackerSubtitle,
-                        { color: theme.subText },
-                      ]}
-                    >
-                      {tripId ? "Trip in progress" : "Ready to start tracking"}
-                    </Text>
-                  </View>
-                  {tripId && (
-                    <View style={styles.activeBadge}>
-                      <View style={styles.pulseCircle} />
-                      <Text style={styles.activeText}>ACTIVE</Text>
-                    </View>
-                  )}
-                </View>
-
-                {tripId && (
-                  <View
-                    style={[
-                      styles.tripInfoBox,
-                      { backgroundColor: theme.background },
-                    ]}
-                  >
-                    <View style={styles.tripInfoItem}>
-                      <Ionicons
-                        name="play-circle"
-                        size={16}
-                        color={theme.primary}
-                      />
-                      <Text
-                        style={[styles.tripInfoLabel, { color: theme.subText }]}
-                      >
-                        Started at
-                      </Text>
-                      <Text
-                        style={[styles.tripInfoValue, { color: theme.text }]}
-                      >
-                        {startKm} km
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                <TouchableOpacity
-                  style={[
-                    styles.tripActionButton,
-                    {
-                      backgroundColor: tripId ? "#ef4444" : theme.primary,
-                      borderColor: tripId ? "#dc2626" : theme.primary,
-                    },
-                  ]}
-                  onPress={() => setShowTripModal(true)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name={tripId ? "stop-circle" : "play-circle"}
-                    size={20}
-                    color="#fff"
-                  />
-                  <Text style={styles.tripActionButtonText}>
-                    {tripId ? "End Trip" : "Start New Trip"}
-                  </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#fff" />
-                </TouchableOpacity>
+                <Text style={[styles.timeTagText, { color: timeInfo.color }]}>
+                  {timeInfo.label}
+                </Text>
               </View>
             </View>
-          </>
-        }
-        renderItem={null}
-      />
 
-      {renderTrackingGuide()}
-      {/* Trip Modal */}
+            <Text style={[styles.greetingSubtitle, { color: theme.subText }]}>
+              Ready to manage active delivery tasks
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* CONTINUOUS LOCATION TRACKING & TRIP MANAGEMENT CARD */}
+      {renderLocationStatus()}
+
+      {/* ROUTE SUMMARY STATS CARD */}
+      {activeTrip ? (
+        <View
+          style={[
+            styles.statsCard,
+            {
+              backgroundColor: theme.card,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <View style={styles.statsHeader}>
+            <Text style={[styles.statsTitle, { color: theme.text }]}>
+              Assigned Route #{activeTrip.routeIndex || 1}
+            </Text>
+            <View
+              style={[
+                styles.statusBadge,
+                { backgroundColor: theme.primarySoft },
+              ]}
+            >
+              <Text
+                style={[styles.statusBadgeText, { color: theme.primary }]}
+              >
+                {activeTrip.status.toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.statsGrid}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.text }]}>
+                {activeTrip.distanceKm} km
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Total Distance
+              </Text>
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.text }]}>
+                {activeTrip.durationHours} hrs
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Est. Duration
+              </Text>
+            </View>
+
+            <View style={styles.statDivider} />
+
+            <View style={styles.statItem}>
+              <Text style={[styles.statValue, { color: theme.text }]}>
+                {activeTrip.stopCount}
+              </Text>
+              <Text style={[styles.statLabel, { color: theme.subText }]}>
+                Total Stops
+              </Text>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View
+          style={[
+            styles.emptyCard,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}
+        >
+          <Ionicons name="bicycle-outline" size={40} color={theme.muted} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>
+            No Active Trip Assigned
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: theme.subText }]}>
+            Pull down to refresh or wait for dispatcher assignment.
+          </Text>
+        </View>
+      )}
+
+      {/* CURRENT ACTIVE TASK CARD WITH ADDRESS */}
+      {currentTask && (
+        <View style={styles.sectionContainer}>
+          <Text style={[styles.sectionTitle, { color: theme.text }]}>
+            Current Active Task
+          </Text>
+
+          <View
+            style={[
+              styles.taskCard,
+              {
+                backgroundColor: taskIsDone
+                  ? isDark
+                    ? "#1E293B"
+                    : "#F1F5F9"
+                  : theme.card,
+                borderColor: taskIsDone ? "#CBD5E1" : theme.border,
+                opacity: taskIsDone ? 0.65 : 1,
+              },
+            ]}
+          >
+            <View style={styles.taskCardHeader}>
+              <View style={styles.badgeRow}>
+                <View
+                  style={[
+                    styles.sequenceBadge,
+                    { backgroundColor: taskIsDone ? "#64748B" : theme.primary },
+                  ]}
+                >
+                  <Text style={styles.sequenceText}>
+                    #{currentTask.index || 1}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.typeBadge,
+                    {
+                      backgroundColor: taskIsDone
+                        ? "#E2E8F0"
+                        : theme.primarySoft,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.typeBadgeText,
+                      { color: taskIsDone ? "#64748B" : theme.primary },
+                    ]}
+                  >
+                    {currentTask.type.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+
+              {taskIsDone ? (
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                >
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={18}
+                    color={theme.success}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: "800",
+                      color: theme.success,
+                    }}
+                  >
+                    COMPLETED
+                  </Text>
+                </View>
+              ) : currentTask.price > 0 ? (
+                <Text style={[styles.taskPrice, { color: theme.primary }]}>
+                  {currentTask.type === "pickup" ? "Estimated :" : "Collect :"} ₹
+                  {currentTask.price.toLocaleString("en-IN")}
+                </Text>
+              ) : null}
+            </View>
+
+            <Text
+              style={[
+                styles.taskName,
+                { color: taskIsDone ? theme.subText : theme.text },
+              ]}
+            >
+              {currentTask.name}
+            </Text>
+
+            {/* ENHANCED ADDRESS DISPLAY */}
+            <View
+              style={[
+                styles.addressBox,
+                {
+                  backgroundColor: theme.background,
+                  borderColor: theme.border,
+                },
+              ]}
+            >
+              <Ionicons
+                name="location"
+                size={16}
+                color={taskIsDone ? "#94A3B8" : theme.primary}
+                style={{ marginTop: 2 }}
+              />
+              <Text
+                style={[
+                  styles.addressText,
+                  { color: taskIsDone ? theme.subText : theme.text },
+                ]}
+                numberOfLines={2}
+              >
+                {currentTask.address ||
+                  `Stop #${currentTask.index} Location Address`}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+              <TouchableOpacity
+                style={[
+                  styles.workflowBtn,
+                  {
+                    flex: 1,
+                    backgroundColor: theme.primarySoft,
+                    borderWidth: 1,
+                    borderColor: theme.border,
+                  },
+                ]}
+                onPress={() =>
+                  openMapsNavigation(
+                    currentTask.lat,
+                    currentTask.lng,
+                    currentTask.address,
+                    currentTask.name
+                  )
+                }
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="navigate-circle"
+                  size={18}
+                  color={theme.primary}
+                />
+                <Text
+                  style={[styles.workflowBtnText, { color: theme.primary }]}
+                >
+                  Navigate
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.workflowBtn,
+                  {
+                    flex: 1.5,
+                    backgroundColor: taskIsDone ? "#64748B" : theme.primary,
+                  },
+                ]}
+                onPress={() => handleStartWorkflow(currentTask)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={taskIsDone ? "eye-outline" : "arrow-forward"}
+                  size={16}
+                  color="#FFFFFF"
+                />
+                <Text style={styles.workflowBtnText}>
+                  {taskIsDone ? "View Details" : "Start Workflow"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* MODALS */}
+      {/* {renderTrackingGuide()} */}
       {renderTripModal()}
-    </>
-  );
-}
-
-function KpiCard({
-  title,
-  value,
-  theme,
-}: {
-  title: string;
-  value: string;
-  theme: any;
-}) {
-  return (
-    <View
-      style={[
-        styles.kpiCard,
-        { backgroundColor: theme.card, borderColor: theme.border },
-      ]}
-    >
-      <Text style={[styles.kpiTitle, { color: theme.subText }]}>{title}</Text>
-      <Text style={[styles.kpiValue, { color: theme.text }]}>{value}</Text>
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  // Location Status
-  locationStatusContainer: {
+  container: {
+    flex: 1,
     paddingHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 8,
-    alignItems: "center",
+    paddingTop: 16,
   },
-  locationStatusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+
+  greetingCard: {
+    padding: 20,
     borderRadius: 20,
     borderWidth: 1,
-    minWidth: 150,
-    justifyContent: "center",
-    marginBottom: 6,
+    marginBottom: 16,
   },
-  trackingButton: {
-    width: "100%",
+
+  greetingHeader: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 4,
+    alignItems: "flex-start",
+    justifyContent: "space-between",
   },
-  trackingButtonStart: {
-    backgroundColor: "#10B981",
+
+  greetingTitle: {
+    fontSize: 20,
+    fontWeight: "900",
   },
-  trackingButtonStop: {
-    backgroundColor: "#EF4444",
-  },
-  trackingButtonDisabled: {
-    opacity: 0.7,
-  },
-  setupLinkButton: {
+
+  clockRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 6,
+    marginVertical: 4,
   },
-  setupLinkText: {
-    fontSize: 12,
+
+  clockText: {
+    fontSize: 13,
     fontWeight: "800",
   },
-  trackingButtonText: {
-    color: "#fff",
+
+  timeTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+
+  timeTagText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+
+  greetingSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  // Professional, Compact Location Tracking & Trip Card
+  trackingCard: {
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 20,
+    gap: 12,
+  },
+
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  cardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  cardTitleText: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+
+  smallStatusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+
+  smallStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+
+  smallStatusText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
+  tripActionBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 10,
+  },
+
+  tripIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  tripActionInfo: {
+    flex: 1,
+  },
+
+  tripActionTitle: {
     fontSize: 14,
     fontWeight: "800",
   },
-  statusIndicator: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+
+  tripActionSub: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  tripActionButton: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginRight: 8,
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
   },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    color: "white",
-    fontSize: 12,
+
+  tripActionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "800",
-    letterSpacing: 0.5,
   },
+
+  cardFooterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 2,
+  },
+
+  gpsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+
   lastUpdateText: {
     fontSize: 11,
     fontWeight: "600",
-    marginTop: 2,
   },
+
+  setupLinkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+
+  setupLinkBtnText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+
   errorText: {
     fontSize: 11,
     color: "#ef4444",
     fontWeight: "600",
+  },
+
+  // Stats Card
+  statsCard: {
+    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+
+  statsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+
+  statsTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  statsGrid: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+  },
+
+  statItem: {
+    alignItems: "center",
+  },
+
+  statValue: {
+    fontSize: 18,
+    fontWeight: "900",
+  },
+
+  statLabel: {
+    fontSize: 11,
     marginTop: 2,
   },
+
+  statDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: "#EBE2E2",
+  },
+
+  emptyCard: {
+    padding: 32,
+    borderRadius: 20,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginTop: 12,
+  },
+
+  emptySubtitle: {
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 4,
+  },
+
+  sectionContainer: {
+    marginBottom: 32,
+  },
+
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 12,
+  },
+
+  taskCard: {
+    padding: 18,
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 10,
+  },
+
+  taskCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+
+  sequenceBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  sequenceText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+
+  typeBadgeText: {
+    fontSize: 11,
+    fontWeight: "900",
+  },
+
+  taskPrice: {
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
+  taskName: {
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  addressBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+
+  addressText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "500",
+  },
+
+  workflowBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 6,
+  },
+
+  workflowBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  // Guide Modal
   guideOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.55)",
     justifyContent: "center",
     padding: 16,
   },
+
   guideCard: {
     borderRadius: 18,
     padding: 18,
   },
+
   guideHeader: {
     flexDirection: "row",
     gap: 12,
     alignItems: "flex-start",
     marginBottom: 14,
   },
+
   guideIcon: {
     width: 44,
     height: 44,
@@ -1146,21 +1508,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   guideTitle: {
     fontSize: 18,
     fontWeight: "900",
     marginBottom: 4,
   },
+
   guideSub: {
     fontSize: 13,
     lineHeight: 18,
   },
+
   guideStepRow: {
     flexDirection: "row",
     gap: 10,
     alignItems: "flex-start",
     marginBottom: 10,
   },
+
   guideBullet: {
     width: 8,
     height: 8,
@@ -1168,16 +1534,19 @@ const styles = StyleSheet.create({
     marginTop: 6,
     backgroundColor: "#10B981",
   },
+
   guideStepText: {
     flex: 1,
     fontSize: 13,
     lineHeight: 19,
   },
+
   guideActions: {
     flexDirection: "row",
     gap: 10,
     marginTop: 14,
   },
+
   guideAction: {
     flex: 1,
     minHeight: 46,
@@ -1188,10 +1557,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
+
   guideActionText: {
     fontSize: 13,
     fontWeight: "800",
   },
+
   guidePrimary: {
     flex: 1,
     minHeight: 46,
@@ -1201,181 +1572,31 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
+
   guidePrimaryText: {
     color: "#fff",
     fontSize: 13,
     fontWeight: "800",
   },
 
-  // KPI Cards
-  topRow: {
-    marginTop: 20,
-    paddingHorizontal: 16,
-    marginBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  kpiContainer: {
-    paddingHorizontal: 16,
-    marginTop: 6,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  kpiCard: {
-    width: "48%",
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  kpiTitle: {
-    fontSize: 11,
-    fontWeight: "700",
-    marginBottom: 6,
-    letterSpacing: 0.5,
-  },
-  kpiValue: {
-    fontSize: 20,
-    fontWeight: "900",
-  },
-  returnPlantContainer: {
-    marginTop: 10,
-    paddingHorizontal: 16,
-  },
-  returnPlantButton: {
-    alignItems: "center",
-    borderRadius: 12,
-    borderWidth: 1,
-    flexDirection: "row",
-    padding: 14,
-  },
-  returnPlantIcon: {
-    alignItems: "center",
-    borderRadius: 10,
-    height: 42,
-    justifyContent: "center",
-    marginRight: 12,
-    width: 42,
-  },
-  returnPlantTextWrap: {
-    flex: 1,
-  },
-  returnPlantTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  returnPlantSub: {
-    fontSize: 12,
-    marginTop: 3,
-  },
-
-  // Trip Tracker
-  tripTrackerContainer: {
-    paddingHorizontal: 16,
-    marginTop: 16,
-  },
-  tripTrackerCard: {
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  tripTrackerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  tripIconWrapper: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  tripTrackerTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  tripTrackerSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  activeBadge: {
-    backgroundColor: "#10b981",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  pulseCircle: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#fff",
-    marginRight: 6,
-  },
-  activeText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  tripInfoBox: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  tripInfoItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  tripInfoLabel: {
-    fontSize: 13,
-  },
-  tripInfoValue: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  tripActionButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 8,
-  },
-  tripActionButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "800",
-    letterSpacing: 0.3,
-  },
-
-  // Modal Styles
+  // Modal / General
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "flex-end",
   },
+
   modalContent: {
+    width: "100%",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 8,
-    paddingBottom: 32,
-    maxHeight: height * 0.85,
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: -4 },
+    paddingBottom: 16,
+    maxHeight: height * 0.88,
+    minHeight: 650,
     elevation: 10,
   },
+
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1383,30 +1604,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0, 0, 0, 0.05)",
   },
+
   modalTitle: {
     fontSize: 22,
     fontWeight: "800",
   },
+
   modalSubtitle: {
     fontSize: 14,
     marginTop: 4,
   },
+
   closeButton: {
     padding: 4,
   },
 
-  // Input Section
   inputSection: {
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+
   inputLabel: {
     fontSize: 14,
     fontWeight: "700",
     marginBottom: 10,
   },
+
   inputWrapper: {
     flexDirection: "row",
     alignItems: "center",
@@ -1415,26 +1639,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 56,
   },
+
   inputIcon: {
     marginRight: 10,
   },
+
   textInput: {
     flex: 1,
     fontSize: 16,
     fontWeight: "600",
   },
 
-  // Photo Section
   photoSection: {
     paddingHorizontal: 20,
     paddingTop: 24,
   },
+
   photoLabelRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 10,
   },
+
   compressingBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1444,10 +1671,12 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "rgba(59, 130, 246, 0.1)",
   },
+
   compressingText: {
     fontSize: 11,
     fontWeight: "700",
   },
+
   photoButton: {
     borderWidth: 2,
     borderStyle: "dashed",
@@ -1456,6 +1685,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   cameraIconWrapper: {
     width: 72,
     height: 72,
@@ -1464,35 +1694,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 16,
   },
+
   photoButtonText: {
     fontSize: 16,
     fontWeight: "700",
     marginBottom: 6,
   },
+
   photoButtonSubtext: {
     fontSize: 13,
     textAlign: "center",
     marginBottom: 8,
   },
-  compressionNote: {
-    fontSize: 12,
-    fontWeight: "600",
-    marginTop: 4,
-  },
+
   imagePreviewContainer: {
     position: "relative",
   },
+
   imagePreview: {
     width: "100%",
     height: 220,
     borderRadius: 16,
     resizeMode: "cover",
   },
+
   imageInfoOverlay: {
     position: "absolute",
     top: 12,
     left: 12,
   },
+
   compressionBadge: {
     flexDirection: "row",
     alignItems: "center",
@@ -1502,11 +1733,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 4,
   },
+
   compressionText: {
     color: "#fff",
     fontSize: 11,
     fontWeight: "700",
   },
+
   retakeButton: {
     position: "absolute",
     bottom: 12,
@@ -1519,19 +1752,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 6,
   },
+
   retakeText: {
     color: "#fff",
     fontSize: 13,
     fontWeight: "700",
   },
 
-  // Action Buttons
   actionButtons: {
     flexDirection: "row",
     paddingHorizontal: 20,
     paddingTop: 28,
     gap: 12,
   },
+
   cancelButton: {
     flex: 1,
     paddingVertical: 14,
@@ -1540,10 +1774,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   cancelButtonText: {
     fontSize: 15,
     fontWeight: "700",
   },
+
   submitButton: {
     flex: 1,
     paddingVertical: 14,
@@ -1553,6 +1789,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 8,
   },
+
   submitButtonText: {
     color: "#fff",
     fontSize: 15,

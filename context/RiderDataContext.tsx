@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
+import { VRPTrip, VRPStop, vrpTripService } from "@/services/api/vrpTripService";
 
 /* ================= TYPES ================= */
 
@@ -6,6 +7,9 @@ export type Pickup = {
   _id: string;
   Name: string;
   Address: string;
+  Contact?: string;
+  item_types?: string[];
+  price?: number;
 };
 
 export type Delivery = {
@@ -15,9 +19,19 @@ export type Delivery = {
   address: string;
   lat: number;
   lng: number;
+  price?: number;
+  delivery_weight?: number;
+  item_types?: string[];
 };
 
 type RiderDataContextType = {
+  // VRP Trip State
+  activeTrip: VRPTrip | null;
+  setActiveTrip: React.Dispatch<React.SetStateAction<VRPTrip | null>>;
+  loadingTrip: boolean;
+  refreshActiveTrip: (riderId: string, email?: string) => Promise<VRPTrip | null>;
+  
+  // Legacy / Filtered Lists
   pickups: Pickup[];
   setPickups: React.Dispatch<React.SetStateAction<Pickup[]>>;
   addPickupRealtime: (pickup: Pickup) => void;
@@ -36,8 +50,55 @@ export const RiderDataProvider = ({
 }: {
   children: React.ReactNode;
 }) => {
+  const [activeTrip, setActiveTrip] = useState<VRPTrip | null>(null);
+  const [loadingTrip, setLoadingTrip] = useState<boolean>(false);
   const [pickups, setPickups] = useState<Pickup[]>([]);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
+
+  const refreshActiveTrip = useCallback(async (riderId: string, email?: string) => {
+    if (!riderId) return null;
+    setLoadingTrip(true);
+    try {
+      const trip = await vrpTripService.getAssignedTrip(riderId, email);
+      setActiveTrip(trip);
+
+      if (trip && trip.stops) {
+        // Map VRP stops to Pickups state
+        const tripPickups: Pickup[] = trip.stops
+          .filter((s) => s.type === "pickup")
+          .map((s) => ({
+            _id: s.id,
+            Name: s.name,
+            Address: s.address || `Stop #${s.index} Location`,
+            item_types: s.item_types,
+            price: s.price,
+          }));
+        setPickups(tripPickups);
+
+        // Map VRP stops to Deliveries state
+        const tripDeliveries: Delivery[] = trip.stops
+          .filter((s) => s.type === "delivery")
+          .map((s) => ({
+            id: s.id,
+            orderId: s.id,
+            name: s.name,
+            address: s.address || `Stop #${s.index} Delivery Point`,
+            lat: s.lat,
+            lng: s.lng,
+            price: s.price,
+            delivery_weight: s.delivery_weight,
+            item_types: s.item_types,
+          }));
+        setDeliveries(tripDeliveries);
+      }
+      return trip;
+    } catch (e) {
+      console.error("refreshActiveTrip error:", e);
+      return null;
+    } finally {
+      setLoadingTrip(false);
+    }
+  }, []);
 
   const addPickupRealtime = (pickup: Pickup) => {
     setPickups((prev) => {
@@ -58,6 +119,10 @@ export const RiderDataProvider = ({
   return (
     <RiderDataContext.Provider
       value={{
+        activeTrip,
+        setActiveTrip,
+        loadingTrip,
+        refreshActiveTrip,
         pickups,
         setPickups,
         addPickupRealtime,

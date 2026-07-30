@@ -118,7 +118,7 @@ export async function showTrackingNotification(
 ): Promise<void> {
   try {
     await Notifications.scheduleNotificationAsync({
-      content: { title, body, sound: null },
+      content: { title, body, sound: false },
       trigger: null,
     });
   } catch (e) {

@@ -12,12 +12,9 @@ export const socket = io(SOCKET_URL, {
   reconnectionDelay: 1000,
   reconnectionDelayMax: 30000,
   timeout: 20000,
-  // Send a ping every 25s so the server doesn't drop the connection while
-  // the app is in the background. socket.io uses engine.io ping/pong under
-  // the hood; setting a low pingInterval here nudges the client to stay chatty.
-  pingInterval: 25000,
-  pingTimeout: 20000,
 });
+
+console.log("this is the socket-->>>", socket);
 
 socket.onAnyOutgoing((event, ...args) => {
 });
