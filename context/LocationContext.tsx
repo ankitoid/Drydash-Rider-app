@@ -19,6 +19,7 @@ import {
   useState,
 } from "react";
 import {
+  ActivityIndicator,
   Alert,
   AppState,
   AppStateStatus,
@@ -76,8 +77,10 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isPiPActive, setIsPiPActive] = useState(false);
   const [isOverlayActive, setIsOverlayActive] = useState(false);
   const [isLocationDisabled, setIsLocationDisabled] = useState(false);
+  const [isEnablingGps, setIsEnablingGps] = useState(false);
 
   const alertEmittedRef = useRef(false);
+  const enablingGpsRef = useRef(false);
 
   useEffect(() => {
     const sub = nativeTrackingEmitter?.addListener(
@@ -179,11 +182,31 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const enableLocationServices = async (): Promise<void> => {
+    if (enablingGpsRef.current) return;
+    enablingGpsRef.current = true;
+    setIsEnablingGps(true);
+
     try {
+      // 1. Check and request location permissions if missing or denied
+      let { status } = await Location.getForegroundPermissionsAsync();
+      if (status !== "granted") {
+        const req = await Location.requestForegroundPermissionsAsync();
+        status = req.status;
+      }
+
+      if (status !== "granted") {
+        // If permission still not granted, direct user to app settings
+        await Linking.openSettings();
+        return;
+      }
+
+      // 2. Enable location provider (GPS / High Accuracy mode)
       if (Platform.OS === "android") {
         try {
+          console.log("Attempting to enable network provider via Location API...");
           await Location.enableNetworkProviderAsync();
-        } catch {
+        } catch (e) {
+          console.warn("enableNetworkProviderAsync failed, attempting settings intent:", e);
           try {
             await IntentLauncher.startActivityAsync(
               "android.settings.LOCATION_SOURCE_SETTINGS" as any
@@ -196,11 +219,12 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
         await Linking.openSettings();
       }
     } catch (e) {
+      console.warn("enableLocationServices failed:", e);
       await Linking.openSettings();
     } finally {
-      setTimeout(() => {
-        checkGpsServices();
-      }, 1000);
+      await checkGpsServices();
+      enablingGpsRef.current = false;
+      setIsEnablingGps(false);
     }
   };
 
@@ -583,12 +607,19 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({
             </View>
 
             <TouchableOpacity
-              style={styles.enableGpsButton}
+              style={[styles.enableGpsButton, isEnablingGps && { opacity: 0.7 }]}
               onPress={enableLocationServices}
+              disabled={isEnablingGps}
               activeOpacity={0.88}
             >
-              <Ionicons name="location" size={20} color="#FFFFFF" />
-              <Text style={styles.enableGpsButtonText}>Turn On Location Now</Text>
+              {isEnablingGps ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="location" size={20} color="#FFFFFF" />
+                  <Text style={styles.enableGpsButtonText}>Turn On Location Now</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
