@@ -95,7 +95,7 @@ export default function Dashboard() {
     try {
       if (!user?._id) return;
 
-      const res = await fetch(`${API_V1_BASE_URL}/trips/active/${user._id}`);
+      const res = await fetch(`${API_V1_BASE_URL}/shifts/active/${user._id}`);
       if (!res.ok) return;
 
       const json = await res.json();
@@ -259,7 +259,7 @@ export default function Dashboard() {
     } as any);
 
     try {
-      const res = await fetch(`${API_V1_BASE_URL}/trips/start`, {
+      const res = await fetch(`${API_V1_BASE_URL}/shifts/start`, {
         method: "POST",
         body: form,
       });
@@ -307,7 +307,7 @@ export default function Dashboard() {
     } as any);
 
     try {
-      const res = await fetch(`${API_V1_BASE_URL}/trips/${tripId}/end`, {
+      const res = await fetch(`${API_V1_BASE_URL}/shifts/${tripId}/end`, {
         method: "PUT",
         body: form,
       });
@@ -370,8 +370,20 @@ export default function Dashboard() {
 
   const timeInfo = getTimeIndicator(currentTime);
 
-  const isStopCompleted = (s: VRPStop) =>
-    s.status === "completed" || s.completed === true;
+  const isStopCompleted = (s: VRPStop) => {
+    if (!s) return false;
+    if (s.completed === true) return true;
+    const st = (s.status || (s as any).PickupStatus || "").toString().toLowerCase().trim();
+    return (
+      st === "complete" ||
+      st === "completed" ||
+      st === "delivered" ||
+      st === "picked_up" ||
+      st === "picked-up" ||
+      st === "picked up" ||
+      st === "done"
+    );
+  };
   const nonDepotStops =
     activeTrip?.stops?.filter((s) => s.type !== "depot") || [];
   const currentTask =

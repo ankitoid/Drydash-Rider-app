@@ -254,7 +254,7 @@ class NativeSocketClient(
 
     /**
      * Convert http(s):// base URL into ws(s):// Socket.IO WebSocket endpoint.
-     * e.g. "https://api.example.com" → "wss://api.example.com/socket.io/?EIO=4&transport=websocket"
+     * e.g. "https://stagingexample.com" → "wss://stagingexample.com/socket.io/?EIO=4&transport=websocket"
      */
     private fun buildWsUrl(base: String): String {
         val trimmed = base.trimEnd('/')

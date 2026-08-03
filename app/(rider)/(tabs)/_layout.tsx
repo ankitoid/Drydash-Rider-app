@@ -96,6 +96,14 @@ export default function RiderTabsLayout() {
             ),
           }}
         />
+
+        {/* HIDE PICKUP TAB FROM BOTTOM NAVIGATION BAR */}
+        <Tabs.Screen
+          name="pickup/index"
+          options={{
+            href: null,
+          }}
+        />
       </Tabs>
     </View>
   );

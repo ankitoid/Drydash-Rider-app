@@ -38,9 +38,9 @@ const PAGE_LIMIT = 100;
 
 const SERVICE_OPTIONS = [
   { slug: "laundry", label: "Laundry", icon: "shirt-outline" },
-  { slug: "shoespa", label: "Shoe Spa", icon: "walk-outline" },
-  { slug: "dryclean", label: "Dry Clean", icon: "water-outline" },
-  {slug: "leather", label: "Leather Items", icon: "leather-outline"}
+  { slug: "shoespa", label: "Shoe Spa", icon: "footsteps-outline" },
+  { slug: "dryclean", label: "Dry Clean", icon: "sparkles-outline" },
+  { slug: "leather", label: "Leather Items", icon: "briefcase-outline" },
 ] as const;
 
 type ServiceSlug = (typeof SERVICE_OPTIONS)[number]["slug"];
@@ -129,7 +129,7 @@ export default function PickupWorkflowScreen({
   const routeParams = useLocalSearchParams<{ orderId?: string }>();
   const orderId = propOrderId || routeParams?.orderId || "";
   const { theme, isDark } = useTheme();
-  const { activeTrip } = useRiderData();
+  const { activeTrip, checkIsTripStartedToday } = useRiderData();
   const insets = useSafeAreaInsets();
 
   const matchedStop = activeTrip?.stops?.find(
@@ -140,10 +140,15 @@ export default function PickupWorkflowScreen({
   const [pickupLoading, setPickupLoading] = useState(true);
 
   const isPickupCompleted =
+    matchedStop?.status === "complete" ||
     matchedStop?.status === "completed" ||
+    (matchedStop as any)?.PickupStatus === "complete" ||
+    (matchedStop as any)?.PickupStatus === "completed" ||
     matchedStop?.completed === true ||
+    pickup?.status === "complete" ||
     pickup?.status === "completed" ||
-    pickup?.status === "delivered" ||
+    pickup?.PickupStatus === "complete" ||
+    pickup?.PickupStatus === "completed" ||
     pickup?.completed === true;
   const [servicesBySlug, setServicesBySlug] = useState<
     Record<string, ServiceState>
@@ -157,6 +162,8 @@ export default function PickupWorkflowScreen({
   const [selectedCatalogItemId, setSelectedCatalogItemId] = useState<
     string | null
   >(null);
+  const [selectedCatalogItemOverride, setSelectedCatalogItemOverride] =
+    useState<CatalogItem | null>(null);
   const [draftPhotos, setDraftPhotos] = useState<string[]>([]);
   const [capturedItems, setCapturedItems] = useState<CapturedItem[]>([]);
   const [cameraModalVisible, setCameraModalVisible] = useState(false);
@@ -218,10 +225,35 @@ export default function PickupWorkflowScreen({
 
   const selectedCatalogItem = useMemo(
     () =>
+      selectedCatalogItemOverride ||
       currentService.items.find((item) => item._id === selectedCatalogItemId) ||
       null,
-    [currentService.items, selectedCatalogItemId],
+    [currentService.items, selectedCatalogItemId, selectedCatalogItemOverride],
   );
+
+  const handleSelectCustomerItem = (item: any) => {
+    const targetId = typeof item.itemId === "object" ? item.itemId?._id : item.itemId;
+    const foundCatalogItem =
+      currentService.items.find(
+        (ci) =>
+          (targetId && ci._id === targetId) ||
+          ci.label?.toLowerCase().trim() === item.label?.toLowerCase().trim()
+      ) || null;
+
+    const catalogItem: CatalogItem = foundCatalogItem || {
+      _id: targetId || `cust_${Date.now()}`,
+      label: item.label || "Customer Item",
+      price: item.price || item.itemId?.price || 0,
+      unit: item.unit || "pc",
+      type: item.type || selectedService,
+      sku: item.sku || item.itemId?.sku || "",
+    };
+
+    setSelectedCatalogItemOverride(catalogItem);
+    setSelectedCatalogItemId(catalogItem._id);
+    setDraftPhotos([]);
+    setCameraModalVisible(true);
+  };
 
   const totalAmount = capturedItems.reduce((sum, item) => sum + item.price, 0);
   const totalItems = capturedItems.length;
@@ -860,6 +892,7 @@ export default function PickupWorkflowScreen({
     setScopeCounter(nextIndex);
     setDraftPhotos([]);
     setSelectedCatalogItemId(null);
+    setSelectedCatalogItemOverride(null);
     setSearchQuery("");
   };
 
@@ -894,6 +927,24 @@ export default function PickupWorkflowScreen({
         "Location is still unavailable. Please enable it and wait a moment before completing pickup.",
       );
       return;
+    }
+
+    if (user?._id) {
+      const isTripStarted = await checkIsTripStartedToday(user._id);
+      if (!isTripStarted) {
+        Alert.alert(
+          "Trip / Shift Not Started 🛑",
+          "You cannot complete a pickup until you start your trip for today. Please go to the Dashboard to enter your starting Odometer reading.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Start Trip Now",
+              onPress: () => router.push("/(rider)/(tabs)/dashboard"),
+            },
+          ]
+        );
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -1271,7 +1322,7 @@ export default function PickupWorkflowScreen({
             )}
 
             {customerItems && !customerItemsCollapsed && (
-              <View style={{ marginBottom: 18 }}>
+              <View style={{ marginBottom: 20 }}>
                 <View style={styles.sectionHeader}>
                   <Text style={[styles.sectionTitle, { color: theme.text }]}>
                     Customer Items
@@ -1283,7 +1334,8 @@ export default function PickupWorkflowScreen({
                     <Text
                       style={{
                         color: theme.primary,
-                        fontWeight: "600",
+                        fontWeight: "700",
+                        fontSize: 13,
                       }}
                     >
                       Hide
@@ -1291,52 +1343,91 @@ export default function PickupWorkflowScreen({
                   </TouchableOpacity>
                 </View>
 
-                <Text
-                  style={[
-                    styles.helper,
-                    {
-                      color: theme.subText,
-                      marginBottom: 12,
-                    },
-                  ]}
-                >
-                  Reference only.
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                  <Ionicons name="sparkles" size={14} color={theme.primary} />
+                  <Text
+                    style={[
+                      styles.helper,
+                      {
+                        color: theme.subText,
+                        marginBottom: 0,
+                        fontSize: 12,
+                        fontWeight: "600",
+                      },
+                    ]}
+                  >
+                    Tap any item below to snap photo & add it to pickup:
+                  </Text>
+                </View>
 
                 <View style={{ gap: 10 }}>
-                  {pickup?.items?.map((item, index) => (
-                    <View
-                      key={`${item.itemId?._id}-${index}`}
-                      style={[
-                        styles.capturedCard,
-                        {
-                          backgroundColor: theme.background,
-                          borderColor: theme.border,
-                        },
-                      ]}
-                    >
-                      <Image
-                        source={{
-                          uri:
-                            item.itemId?.images?.[0]?.url ||
-                            "https://via.placeholder.com/80?text=Item",
-                        }}
-                        style={styles.capturedThumb}
-                      />
+                  {pickup?.items?.map((item: any, index: number) => {
+                    const targetId = typeof item.itemId === "object" ? item.itemId?._id : item.itemId;
+                    const addedCount = capturedItems.filter(
+                      (ci) =>
+                        (targetId && ci.itemId === targetId) ||
+                        ci.label?.toLowerCase().trim() === item.label?.toLowerCase().trim()
+                    ).length;
 
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.itemTitle, { color: theme.text }]}>
-                          {item.label}
-                        </Text>
+                    const isItemAdded = addedCount > 0;
 
-                        <Text
-                          style={[styles.itemMeta, { color: theme.subText }]}
-                        >
-                          Qty: {item.quantity}
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
+                    return (
+                      <TouchableOpacity
+                        key={`${targetId || item.label}-${index}`}
+                        activeOpacity={isItemAdded ? 1 : 0.8}
+                        disabled={isItemAdded}
+                        style={[
+                          styles.capturedCard,
+                          {
+                            backgroundColor: isItemAdded
+                              ? (isDark ? "#064E3B20" : "#ECFDF5")
+                              : (isDark ? "#1E293B" : "#F8FAFC"),
+                            borderColor: isItemAdded
+                              ? "#10B981"
+                              : theme.border,
+                            borderWidth: isItemAdded ? 1.5 : 1,
+                          },
+                        ]}
+                        onPress={() => !isItemAdded && handleSelectCustomerItem(item)}
+                      >
+                        <Image
+                          source={{
+                            uri:
+                              item.itemId?.images?.[0]?.url ||
+                              "https://via.placeholder.com/80?text=Item",
+                          }}
+                          style={styles.capturedThumb}
+                        />
+
+                        <View style={{ flex: 1, gap: 2 }}>
+                          <Text style={[styles.itemTitle, { color: theme.text }]}>
+                            {item.label}
+                          </Text>
+
+                          <Text style={[styles.itemMeta, { color: theme.subText }]}>
+                            Qty: {item.quantity || 1}
+                          </Text>
+                        </View>
+
+                        {isItemAdded ? (
+                          <View style={styles.completedItemBadge}>
+                            <Ionicons name="checkmark-circle" size={18} color="#15803D" />
+                            <Text style={styles.completedItemBadgeText}>Added</Text>
+                          </View>
+                        ) : (
+                          <View
+                            style={[
+                              styles.customerItemActionBtn,
+                              { backgroundColor: theme.primary },
+                            ]}
+                          >
+                            <Ionicons name="camera" size={15} color="#FFFFFF" />
+                            <Text style={styles.customerItemActionBtnText}>Add</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
             )}
@@ -1345,11 +1436,7 @@ export default function PickupWorkflowScreen({
               Select Item
             </Text>
 
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.serviceTabs}
-            >
+            <View style={styles.serviceGrid}>
               {SERVICE_OPTIONS.map((service) => {
                 const active = service.slug === selectedService;
                 return (
@@ -1360,7 +1447,9 @@ export default function PickupWorkflowScreen({
                       {
                         backgroundColor: active
                           ? theme.primary
-                          : theme.background,
+                          : isDark
+                          ? "#1E293B"
+                          : "#F8FAFC",
                         borderColor: active ? theme.primary : theme.border,
                       },
                     ]}
@@ -1369,24 +1458,29 @@ export default function PickupWorkflowScreen({
                       setSelectedCatalogItemId(null);
                       setSearchQuery("");
                     }}
+                    activeOpacity={0.8}
                   >
                     <Ionicons
                       name={service.icon as any}
-                      size={16}
-                      color={active ? "#fff" : theme.text}
+                      size={18}
+                      color={active ? "#fff" : theme.primary}
                     />
                     <Text
                       style={[
                         styles.serviceTabText,
-                        { color: active ? "#fff" : theme.text },
+                        {
+                          color: active ? "#fff" : theme.text,
+                          fontWeight: active ? "800" : "700",
+                        },
                       ]}
+                      numberOfLines={1}
                     >
                       {service.label}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
-            </ScrollView>
+            </View>
 
             <View
               style={[
@@ -1728,16 +1822,40 @@ export default function PickupWorkflowScreen({
             <View style={styles.cameraControlsArea}>
               <TouchableOpacity
                 onPress={takePhoto}
-                style={[styles.captureCircleBtn, { backgroundColor: theme.primary }]}
+                disabled={isCompressingPhoto}
+                style={[
+                  styles.captureCircleBtn,
+                  { backgroundColor: isCompressingPhoto ? "#64748B" : theme.primary },
+                ]}
+                activeOpacity={0.8}
               >
-                <Ionicons name="camera" size={28} color="#FFFFFF" />
+                {isCompressingPhoto ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Ionicons name="camera" size={28} color="#FFFFFF" />
+                )}
               </TouchableOpacity>
 
               <TouchableOpacity
                 onPress={() => setCameraModalVisible(false)}
-                style={[styles.confirmPhotosBtn, { backgroundColor: theme.primary }]}
+                disabled={!draftPhotos.length || isCompressingPhoto}
+                style={[
+                  styles.confirmPhotosBtn,
+                  {
+                    backgroundColor:
+                      !draftPhotos.length || isCompressingPhoto
+                        ? "#475569"
+                        : theme.primary,
+                    opacity: !draftPhotos.length || isCompressingPhoto ? 0.55 : 1,
+                  },
+                ]}
+                activeOpacity={0.8}
               >
-                <Text style={styles.confirmPhotosBtnText}>Confirm Photos</Text>
+                <Text style={styles.confirmPhotosBtnText}>
+                  {draftPhotos.length > 0
+                    ? `Confirm Photos (${draftPhotos.length})`
+                    : "Confirm Photos"}
+                </Text>
                 <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
@@ -2197,22 +2315,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  serviceTabs: {
+  serviceGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
     gap: 8,
-    paddingTop: 12,
+    marginTop: 10,
   },
   serviceTab: {
+    width: "48.5%",
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
+    gap: 8,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingVertical: 12,
   },
   serviceTabText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   searchInputWrap: {
     marginTop: 12,
@@ -2441,5 +2564,46 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+  addedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  addedBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#15803D",
+  },
+  customerItemActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  customerItemActionBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  completedItemBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  completedItemBadgeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#15803D",
   },
 });

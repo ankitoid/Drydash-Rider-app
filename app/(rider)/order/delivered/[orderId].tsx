@@ -108,7 +108,7 @@ import { useRiderData } from "@/context/RiderDataContext";
 
 export default function DeliveredOrderDetails() {
   const { orderId } = useLocalSearchParams<{ orderId: string }>();
-  const { activeTrip } = useRiderData();
+  const { activeTrip, checkIsTripStartedToday } = useRiderData();
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState<OrderDetails | null>(null);
 
@@ -116,12 +116,14 @@ export default function DeliveredOrderDetails() {
     (s) => String(s.id) === String(orderId) || String((s as any)._id) === String(orderId)
   );
 
+  console.log("this is the matchedStop=====>>>>>>>>>>",matchedStop)
+
   const isDelivered =
     matchedStop?.status === "completed" ||
     matchedStop?.completed === true ||
     order?.status === "delivered" ||
-    order?.status === "completed" ||
-    (order as any)?.statusHistory?.delivered != null;
+    order?.status === "completed" 
+    // (order as any)?.statusHistory?.delivered != null;
   const [showConfirm, setShowConfirm] = useState(false);
   const [delivering, setDelivering] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -476,6 +478,27 @@ export default function DeliveredOrderDetails() {
     requireProofImage?: boolean;
     markCashPaid?: boolean;
   }) => {
+    if (user?._id) {
+      const isTripStarted = await checkIsTripStartedToday(user._id);
+      if (!isTripStarted) {
+        setShowConfirm(false);
+        setPaymentOptionVisible(false);
+        setQrVisible(false);
+        Alert.alert(
+          "Trip / Shift Not Started 🛑",
+          "You cannot complete a delivery until you start your trip for today. Please go to the Dashboard to enter your starting Odometer reading.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Start Trip Now",
+              onPress: () => router.push("/(rider)/(tabs)/dashboard"),
+            },
+          ]
+        );
+        return;
+      }
+    }
+
     try {
       setDelivering(true);
       setShowConfirm(false);

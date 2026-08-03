@@ -41,13 +41,45 @@ export default function TasksScreen() {
     setRefreshing(false);
   };
 
-  const isDone = (s: VRPStop) => s.status === "completed" || s.completed === true;
-  const stops = activeTrip?.stops || [];
-  const currentTask = stops.find((s) => s.type !== "depot" && !isDone(s));
-  const remainingStops = stops.filter((s) => s.type !== "depot" && s !== currentTask && !isDone(s));
-  const completedStops = stops.filter((s) => s.type !== "depot" && isDone(s));
+  const isDone = (s: VRPStop) => {
+    if (!s) return false;
+    if (s.completed === true) return true;
+    const st = (s.status || (s as any).PickupStatus || "").toString().toLowerCase().trim();
+    if (s.type === "pickup") {
+      return (
+        st === "complete" ||
+        st === "completed" ||
+        st === "picked_up" ||
+        st === "picked-up" ||
+        st === "picked up" ||
+        st === "done"
+      );
+    }
+    if (s.type === "delivery") {
+      return (
+        st === "delivered" ||
+        st === "complete" ||
+        st === "completed" ||
+        st === "done"
+      );
+    }
+    return (
+      st === "delivered" ||
+      st === "complete" ||
+      st === "completed" ||
+      st === "picked_up" ||
+      st === "picked-up" ||
+      st === "done"
+    );
+  };
 
-  console.log("this is the remain------>>>>>>>>>",stops)
+  const stops = activeTrip?.stops || [];
+  const taskStops = stops.filter((s) => s.type !== "depot");
+  const currentTask = taskStops.find((s) => !isDone(s));
+  const remainingStops = taskStops.filter((s) => s !== currentTask && !isDone(s));
+  const completedStops = taskStops.filter((s) => isDone(s));
+
+  console.log("Trip Task Breakdown -> Total:", taskStops.length, "Current:", currentTask?.name, "Remaining:", remainingStops.length, "Completed:", completedStops.length);
 
   const handleStartTask = (stop: VRPStop) => {
     if (stop.type === "depot") return;
@@ -295,12 +327,38 @@ export default function TasksScreen() {
         </View>
       )}
 
-      {/* COMPLETED SECTION FROM FIGMA */}
+      {/* ALL TASKS COMPLETED BANNER */}
+      {!currentTask && remainingStops.length === 0 && completedStops.length > 0 && (
+        <View
+          style={[
+            styles.allCompletedBanner,
+            {
+              backgroundColor: isDark ? "#064E3B" : "#ECFDF5",
+              borderColor: isDark ? "#065F46" : "#A7F3D0",
+            },
+          ]}
+        >
+          <Ionicons name="checkmark-done-circle" size={32} color="#10B981" />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[styles.allCompletedTitle, { color: isDark ? "#34D399" : "#065F46" }]}>
+              All Route Tasks Completed 🎉
+            </Text>
+            <Text style={[styles.allCompletedSub, { color: isDark ? "#A7F3D0" : "#047857" }]}>
+              You've finished all {completedStops.length} pickup & delivery tasks in this trip route.
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* COMPLETED SECTION AT BOTTOM OF PAGE */}
       {completedStops.length > 0 && (
-        <View style={styles.section}>
-          <Text style={[styles.sectionHeading, { color: theme.text }]}>
-            Completed Tasks ({completedStops.length})
-          </Text>
+        <View style={[styles.section, { marginTop: 8, marginBottom: 40 }]}>
+          <View style={styles.completedHeaderRow}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={theme.success} />
+            <Text style={[styles.sectionHeading, { color: theme.text, marginBottom: 0 }]}>
+              Completed Tasks ({completedStops.length})
+            </Text>
+          </View>
 
           {completedStops.map((stop, idx) => (
             <TouchableOpacity
@@ -308,8 +366,8 @@ export default function TasksScreen() {
               style={[
                 styles.completedCard,
                 {
-                  backgroundColor: theme.card,
-                  borderColor: theme.border,
+                  backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+                  borderColor: isDark ? "#334155" : "#E2E8F0",
                 },
               ]}
               onPress={() => handleStartTask(stop)}
@@ -317,7 +375,7 @@ export default function TasksScreen() {
             >
               <Ionicons name="checkmark-circle" size={22} color={theme.success} />
               <View style={{ flex: 1, gap: 4 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <Text style={[styles.completedText, { color: theme.text }]}>
                     #{stop.index} — {stop.name}
                   </Text>
@@ -337,9 +395,9 @@ export default function TasksScreen() {
                 )}
               </View>
               <View style={{ alignItems: "flex-end", gap: 2 }}>
-                <Text style={{ fontSize: 11, fontWeight: "800", color: theme.success }}>
-                  COMPLETED
-                </Text>
+                <View style={styles.completedStatusBadge}>
+                  <Text style={styles.completedStatusBadgeText}>COMPLETED</Text>
+                </View>
                 <Ionicons name="chevron-forward" size={16} color={theme.muted} />
               </View>
             </TouchableOpacity>
@@ -578,6 +636,13 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  completedHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+
   completedCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -591,6 +656,41 @@ const styles = StyleSheet.create({
   completedText: {
     fontSize: 14,
     fontWeight: "700",
+  },
+
+  completedStatusBadge: {
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+
+  completedStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#15803D",
+    letterSpacing: 0.3,
+  },
+
+  allCompletedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 20,
+  },
+
+  allCompletedTitle: {
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  allCompletedSub: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "500",
   },
 
   emptyStateCard: {

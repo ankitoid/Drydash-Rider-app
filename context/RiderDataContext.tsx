@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from "react";
 import { VRPTrip, VRPStop, vrpTripService } from "@/services/api/vrpTripService";
+import { API_V1_BASE_URL } from "@/constants/apiConfig";
 
 /* ================= TYPES ================= */
 
@@ -10,6 +11,8 @@ export type Pickup = {
   Contact?: string;
   item_types?: string[];
   price?: number;
+  status?: string;
+  completed?: boolean;
 };
 
 export type Delivery = {
@@ -22,6 +25,8 @@ export type Delivery = {
   price?: number;
   delivery_weight?: number;
   item_types?: string[];
+  status?: string;
+  completed?: boolean;
 };
 
 type RiderDataContextType = {
@@ -30,6 +35,7 @@ type RiderDataContextType = {
   setActiveTrip: React.Dispatch<React.SetStateAction<VRPTrip | null>>;
   loadingTrip: boolean;
   refreshActiveTrip: (riderId: string, email?: string) => Promise<VRPTrip | null>;
+  checkIsTripStartedToday: (riderId: string) => Promise<boolean>;
   
   // Legacy / Filtered Lists
   pickups: Pickup[];
@@ -72,6 +78,8 @@ export const RiderDataProvider = ({
             Address: s.address || `Stop #${s.index} Location`,
             item_types: s.item_types,
             price: s.price,
+            status: s.status,
+            completed: s.completed,
           }));
         setPickups(tripPickups);
 
@@ -88,6 +96,8 @@ export const RiderDataProvider = ({
             price: s.price,
             delivery_weight: s.delivery_weight,
             item_types: s.item_types,
+            status: s.status,
+            completed: s.completed,
           }));
         setDeliveries(tripDeliveries);
       }
@@ -97,6 +107,19 @@ export const RiderDataProvider = ({
       return null;
     } finally {
       setLoadingTrip(false);
+    }
+  }, []);
+
+  const checkIsTripStartedToday = useCallback(async (riderId: string): Promise<boolean> => {
+    if (!riderId) return false;
+    try {
+      const res = await fetch(`${API_V1_BASE_URL}/shifts/active/${riderId}`);
+      if (!res.ok) return false;
+      const json = await res.json();
+      return Boolean(json.hasActiveTrip && json.trip);
+    } catch (e) {
+      console.warn("checkIsTripStartedToday error:", e);
+      return false;
     }
   }, []);
 
@@ -123,6 +146,7 @@ export const RiderDataProvider = ({
         setActiveTrip,
         loadingTrip,
         refreshActiveTrip,
+        checkIsTripStartedToday,
         pickups,
         setPickups,
         addPickupRealtime,

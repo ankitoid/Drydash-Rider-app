@@ -116,7 +116,15 @@ export const vrpTripService = {
 
       // Map ERP Pickups to VRPStop format
       pickupItems.forEach((p: any) => {
-        const isDone = p.PickupStatus === "completed" || p.completed === true;
+        const statusStr = (p.PickupStatus || p.status || "").toString().toLowerCase().trim();
+        const isDone =
+          statusStr === "complete" ||
+          statusStr === "completed" ||
+          statusStr === "picked_up" ||
+          statusStr === "picked-up" ||
+          statusStr === "picked up" ||
+          statusStr === "done" ||
+          p.completed === true;
         stops.push({
           id: p._id,
           name: p.Name || "Pickup Task",
@@ -136,7 +144,13 @@ export const vrpTripService = {
 
       // Map ERP Deliveries to VRPStop format
       deliveryItems.forEach((d: any) => {
-        const isDone = d.status === "delivered" || d.status === "completed" || d.completed === true;
+        const statusStr = (d.status || "").toString().toLowerCase().trim();
+        const isDone =
+          statusStr === "delivered" ||
+          statusStr === "complete" ||
+          statusStr === "completed" ||
+          statusStr === "done" ||
+          d.completed === true;
         stops.push({
           id: d._id || d.order_id,
           name: d.customerName || d.Name || "Delivery Task",
